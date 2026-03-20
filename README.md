@@ -1,32 +1,62 @@
-# cloverAssistant
+# cloverdx-dev — Claude Skill for CloverDX Development
 
-Workspace for building and maintaining the [cloverdx-dev](https://github.com/drabepet/cloverdx-dev) Claude skill.
+A Claude Code skill that acts as a CloverDX development co-pilot. It activates when
+working inside a CloverDX sandbox or when any CloverDX development task is mentioned.
 
-## Structure
+## What It Does
+
+- Reads, writes, and modifies graph XML (`.grf`), jobflows (`.jbf`), subgraphs (`.sgrf`), and data services (`.rjob`)
+- Writes correct CTL2 transformations that compile — not pseudocode
+- Understands metadata, connections, parameters, and project conventions
+- When connected to a CloverDX Server via MCP: pulls live execution logs, performance metrics, and server configuration to ground advice in reality
+
+## Knowledge Base
+
+| Area | Coverage |
+|---|---|
+| CTL2 | Language reference, all built-in functions (string, date, math, conversion, container) |
+| Components | All major component types with real configuration examples |
+| Graph XML | `.grf` / `.jbf` / `.sgrf` / `.rjob` structure from real annotated examples |
+| Metadata | Record types, field types, `.fmt` files, inline metadata, edge assignment |
+| Patterns | 20 common ETL patterns derived from real example graphs |
+| Debugging | MCP diagnostic workflows, log analysis, performance correlation |
+| Architecture | Dual JVM model, memory sizing, AWS/Kubernetes deployment |
+
+## Installation
+
+1. Download the latest zip from [Releases](../../releases)
+2. In Claude desktop → Settings → Customize → Skills → Import
+3. Select the zip file
+
+## MCP Integration
+
+When connected to a CloverDX Server via MCP, the skill uses live tools:
+
+| Tool | Purpose |
+|---|---|
+| `deployment_current` | Server version, DB, JVM, cluster info |
+| `retrieve_tracking_get` | Execution history for specific runs |
+| `retrive_graph_log_get` | Raw log for a single graph execution |
+| `list_performance_logs` | Worker/Core heap, CPU, GC metrics |
+| `retrieve_sandbox_file` | Read files from server-side sandbox |
+
+## Repository Layout
 
 ```
-skill/          — The Claude skill (published to cloverdx-dev repo)
-  SKILL.md      — Skill definition and trigger instructions
-  README.md     — Public-facing documentation
-  references/   — 24 reference files loaded on demand by the skill
-examples/       — CloverDX TrainingExamples sandbox (gitignored)
-*.txt           — Raw doc extracts used to build reference files (gitignored)
-```
-
-## Remotes
-
-| Remote | Repo | Visibility |
-|---|---|---|
-| `origin` | `drabepet/cloverAssistant` | Private — full workspace |
-| `cloverdx-dev` | `drabepet/cloverdx-dev` | Public — skill only |
-
-## Publishing Updates
-
-Edit files under `skill/`, then:
-
-```bash
-git add skill/
-git commit -m "describe what changed"
-git push                    # private workspace
-git push cloverdx-dev main  # public skill repo
+skill/
+  SKILL.md          — Skill definition, triggers, and workflow instructions
+  README.md         — This file
+  references/       — 24 focused reference files loaded on demand
+    ctlref.md
+    ctl-*.md        — CTL2 function reference (6 files)
+    components.md
+    comp-*.md       — Component reference by category (8 files)
+    metadata.md
+    graph-xml.md
+    jobflow-xml.md
+    subgraph-xml.md
+    dataservice-xml.md
+    patterns.md
+    debugging.md
+    architecture.md
 ```

@@ -36,62 +36,24 @@ cite the specific log entry.
 ## First Contact — Sandbox Discovery
 
 When first pointed at a CloverDX sandbox directory, always start with a systematic inventory
-before doing anything else. This grounds all subsequent work in the actual project state.
+before doing anything else. Read `references/sandbox-discovery.md` for the full workflow.
 
-### Step 1: Map the sandbox structure
+**Quick version:**
 
+```bash
+find . -type f \( \
+  -name "*.grf"  -o -name "*.jbf"  -o -name "*.sgrf" -o \
+  -name "*.rjob" -o -name "*.fmt"  -o -name "*.ctl"  -o \
+  -name "*.cfg"  -o -name "*.prm"  -o -name "*.jar"  \
+\) | sort | head -300
 ```
-# Run this to understand what you're working with
-find . -type f \( -name "*.grf" -o -name "*.jbf" -o -name "*.fmt" \
-  -o -name "*.ctl" -o -name "*.cfg" -o -name "*.properties" \
-  -o -name "*.xsd" -o -name "*.wsdl" -o -name "*.json" \
-  -o -name "*.csv" -o -name "*.xml" \) | head -200
-```
 
-Classify what you find:
-- `*.grf` — Graphs (individual transformation jobs)
-- `*.jbf` — Jobflows (orchestration pipelines that run graphs)
-- `*.fmt` — Metadata definitions (record structure specifications)
-- `*.ctl` — External CTL2 transformation code
-- `*.cfg` — Connection and configuration definitions
-- `graph/` — Typical directory for graphs
-- `jobflow/` — Typical directory for jobflows
-- `meta/` — Typical directory for metadata
-- `trans/` or `transformation/` — External CTL transformations
-- `data-in/`, `data-out/`, `data-tmp/` — Data directories
+CloverDX job types: `.grf` (graph) · `.jbf` (jobflow) · `.sgrf` (subgraph) · `.rjob` (data service)
 
-### Step 2: Read key configuration
+Then read `workspace.prm` and any `.cfg` connection files before touching anything else.
 
-Look for `clover.properties` or `workspace.prm` — these contain project-level parameters,
-connection strings, and environment-specific settings. Understanding these early prevents
-confusion later.
-
-### Step 3: If MCP is available, get server context
-
-When connected to CloverDX Server MCP, call these tools immediately:
-
-1. **`deployment_current`** — Returns the actual installed version, database type, JVM config,
-   and cluster topology. This anchors all advice to the real environment.
-2. **`deployment_supported`** — Returns officially supported configurations. Use this to
-   validate the current setup.
-3. **`list_performance_logs`** — Check recent Worker heap and CPU patterns to understand
-   the baseline load.
-
-Then, for the specific sandbox:
-4. **`retrieve_sandbox_file`** — Read specific files from the server-side sandbox
-5. **`retrieve_tracking_get`** — Get execution history for recent job runs
-6. **`retrive_graph_log_get`** — Pull logs from specific executions (note the typo in the
-   tool name — it's `retrive`, not `retrieve`)
-
-### Step 4: Summarize to the user
-
-After discovery, present a concise summary:
-- Sandbox name and structure overview
-- Number of graphs, jobflows, metadata files
-- Key connections and parameters found
-- Server version and environment (if MCP available)
-- Recent execution status (if MCP available)
-- Any immediate observations (errors, deprecated components, etc.)
+If MCP is available, call `deployment_current` first — it anchors all advice to the
+real server version and environment.
 
 ---
 
@@ -264,6 +226,7 @@ Read these before tackling specific tasks. Each file is focused and self-contain
 
 | File | Content | Read When |
 |---|---|---|
+| `references/sandbox-discovery.md` | Full discovery workflow: find command, file type reference, directory conventions, what to read first, MCP steps, summary template, quick checks | First thing to read when pointed at any sandbox |
 | `references/architecture.md` | Dual JVM model, ports, memory sizing, storage, AWS deployment | Debugging infrastructure issues, capacity planning, deployment questions |
 | `references/ctlref.md` | **CTL2 overview** — data type table, operator table, essential patterns, links to sub-files | Start here for any CTL2 work — it points to detailed sub-files below |
 | `references/ctl-types-and-syntax.md` | Full language reference: data types, literals, operators, control flow, error handling, record access, regex | Need syntax details, operator behavior, or control flow specifics |
