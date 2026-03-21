@@ -93,6 +93,11 @@ Standard parameters — defined in the graph, can be overridden by `workspace.pr
 </GraphParameter>
 ```
 
+> **Warning — Designer strips `<DynamicValue>`:** Opening a graph containing a
+> `<DynamicValue>` block in the Designer and saving will silently remove the block,
+> replacing it with a static `value=""`. Always edit dynamic parameters directly in
+> XML (not through Designer) and verify the block is still present after any Designer save.
+
 **`<ComponentReference>`** — auto-wires a parameter value into a component property:
 ```xml
 <GraphParameter name="FILE_URL" value="${DATAIN_DIR}/customers.csv">

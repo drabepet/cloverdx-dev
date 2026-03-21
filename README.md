@@ -8,6 +8,7 @@ working inside a CloverDX sandbox or when any CloverDX development task is menti
 - Reads, writes, and modifies graph XML (`.grf`), jobflows (`.jbf`), subgraphs (`.sgrf`), and data services (`.rjob`)
 - Writes correct CTL2 transformations that compile — not pseudocode
 - Understands metadata, connections, parameters, and project conventions
+- **Validates every generated file** via `checkConfig` API before presenting it — built-in feedback loop catches errors automatically
 - When connected to a CloverDX Server via MCP: pulls live execution logs, performance metrics, and server configuration to ground advice in reality
 
 ## Knowledge Base
@@ -45,8 +46,9 @@ When connected to a CloverDX Server via MCP, the skill uses live tools:
 ```
 skill/
   SKILL.md          — Skill definition, triggers, and workflow instructions
-  README.md         — This file
-  references/       — 24 focused reference files loaded on demand
+  scripts/
+    checkconfig.sh  — Validates a job file via CloverDX checkConfig API
+  references/       — 27 focused reference files loaded on demand
     ctlref.md
     ctl-*.md        — CTL2 function reference (6 files)
     components.md
@@ -59,4 +61,20 @@ skill/
     patterns.md
     debugging.md
     architecture.md
+    sandbox-discovery.md
 ```
+
+## Validation Script
+
+The skill ships with `skill/scripts/checkconfig.sh` — a reusable script that calls the
+CloverDX `checkConfig` REST API and prints any issues found:
+
+```bash
+bash skill/scripts/checkconfig.sh <sandbox> <path/in/sandbox>
+# e.g.
+bash skill/scripts/checkconfig.sh MySandbox graph/LoadCustomers.grf
+```
+
+Exit codes: `0` = valid, `1` = issues found, `2` = server unreachable.
+Defaults to `http://localhost:8083` with `clover/clover` credentials.
+Override with `CLOVER_HOST`, `CLOVER_USER`, `CLOVER_PASS` env vars.

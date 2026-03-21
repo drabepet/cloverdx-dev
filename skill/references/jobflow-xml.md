@@ -53,12 +53,12 @@ control flow is expressed through LOOP and CONDITION, not phase sequencing).
 ```xml
 <Node id="EXECUTE_LOAD_CUSTOMERS" type="EXECUTE_GRAPH"
       guiX="200" guiY="100"
-      graphURL="${GRAPH_DIR}/LoadCustomers.grf"
+      jobURL="${GRAPH_DIR}/LoadCustomers.grf"
       stopOnFail="true">
     <attr name="inputMapping"><![CDATA[
 //#CTL2
 function integer transform() {
-    $out.1.fileUrl = $in.0.url;
+    $out.1.fileUrl = $in.0.URL;
     $out.1.truncate = getParamValue("TRUNCATE_TABLE");
     return ALL;
 }
@@ -77,7 +77,7 @@ function integer transform() {
 **Key EXECUTE_GRAPH attributes:**
 | Attribute | Description | Default |
 |---|---|---|
-| `graphURL` | Path to .grf file | required |
+| `jobURL` | Path to .grf/.jbf/.sgrf file | required |
 | `stopOnFail` | Abort jobflow if child fails | `true` |
 | `executionType` | `synchronous` or `asynchronous` | `synchronous` |
 | `executorsNumber` | Max concurrent instances (when fed by LIST_FILES) | `1` |
@@ -86,11 +86,34 @@ function integer transform() {
 
 **inputMapping port convention:**
 - `$in.0.*` — record from the jobflow's input edge (e.g., from LIST_FILES or GET_JOB_INPUT)
-- `$out.1.*` — parameters passed to the child graph
+- `$out.0.executionLabel` — per-run label shown in Server tracking UI (CTL2 string expression)
+- `$out.1.*` — parameters passed into the child graph (mapped to child's GraphParameters)
+
+Both `$out.0.executionLabel` and `$out.1.*` are almost always used together:
+```ctl
+//#CTL2
+function integer transform() {
+    $out.0.executionLabel = "Loading: " + $in.0.URL;  // tracking label
+    $out.1.fileUrl = $in.0.URL;                        // child graph parameter
+    $out.1.truncate = getParamValue("TRUNCATE_TABLE");
+    return ALL;
+}
+```
 
 **outputMapping port convention:**
 - `$in.1.*`, `$in.2.*`, `$in.3.*` — child graph output ports
 - `$out.0.*` — record accumulated in the jobflow for downstream processing
+
+**LIST_FILES output record schema (field names are case-sensitive):**
+| Field | Type | Description |
+|---|---|---|
+| `URL` | string | Full file URL (use this in `jobURL` / `fileURL` mappings) |
+| `name` | string | Filename only |
+| `size` | long | File size in bytes |
+| `lastModified` | date | Last modification timestamp |
+| `isFile` | boolean | True if it's a regular file |
+| `isDirectory` | boolean | True if it's a directory |
+| `canRead` | boolean | Read permission flag |
 
 **Auto-named output fields from child graph:**
 When the child graph uses a component with tracking enabled, outputMapping can read
@@ -251,7 +274,7 @@ Format: `x1|y1|x2|y2|...` — each pair is a waypoint in the canvas coordinate s
     <Phase number="0">
         <!-- Step 1: load customers -->
         <Node id="EXEC_CUSTOMERS" type="EXECUTE_GRAPH"
-              graphURL="${GRAPH_DIR}/LoadCustomers.grf"
+              jobURL="${GRAPH_DIR}/LoadCustomers.grf"
               stopOnFail="true" guiX="100" guiY="100">
             <attr name="inputMapping"><![CDATA[
 //#CTL2
@@ -264,12 +287,12 @@ function integer transform() {
 
         <!-- Step 2: load orders (runs after customers complete) -->
         <Node id="EXEC_ORDERS" type="EXECUTE_GRAPH"
-              graphURL="${GRAPH_DIR}/LoadOrders.grf"
+              jobURL="${GRAPH_DIR}/LoadOrders.grf"
               stopOnFail="true" guiX="350" guiY="100"/>
 
         <!-- Step 3: load payments -->
         <Node id="EXEC_PAYMENTS" type="EXECUTE_GRAPH"
-              graphURL="${GRAPH_DIR}/LoadPayments.grf"
+              jobURL="${GRAPH_DIR}/LoadPayments.grf"
               stopOnFail="true" guiX="600" guiY="100"/>
 
         <!-- Edges wire execution order -->
@@ -324,7 +347,7 @@ function boolean isTrue() {
 
         <!-- Run the actual job — don't abort jobflow on child failure -->
         <Node id="EXEC_JOB" type="EXECUTE_GRAPH"
-              graphURL="${GRAPH_DIR}/LoadData.grf"
+              jobURL="${GRAPH_DIR}/LoadData.grf"
               stopOnFail="false"
               redirectErrorOutput="true"
               guiX="380" guiY="100"/>
@@ -390,14 +413,14 @@ function string getMessage() {
 
     <!-- executorsNumber=4 → up to 4 child graphs run concurrently -->
     <Node id="EXEC_LOAD" type="EXECUTE_GRAPH"
-          graphURL="${GRAPH_DIR}/LoadPaymentsFile.grf"
+          jobURL="${GRAPH_DIR}/LoadPaymentsFile.grf"
           executorsNumber="4"
           stopOnFail="true"
           guiX="250" guiY="100">
         <attr name="inputMapping"><![CDATA[
 //#CTL2
 function integer transform() {
-    $out.1.fileUrl = $in.0.url;
+    $out.1.fileUrl = $in.0.URL;
     return ALL;
 }
         ]]></attr>
@@ -415,7 +438,7 @@ function integer transform() {
 ```xml
 <!-- Fire-and-forget: launch all child graphs without waiting -->
 <Node id="EXEC_ASYNC" type="EXECUTE_GRAPH"
-      graphURL="${GRAPH_DIR}/HeavyProcess.grf"
+      jobURL="${GRAPH_DIR}/HeavyProcess.grf"
       executionType="asynchronous"
       guiX="200" guiY="100"/>
 

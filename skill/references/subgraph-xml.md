@@ -87,6 +87,9 @@ These are the internal connection points that map to the declared ports.
 
 - `outputPortIndex` — which output port (matches declaration order in `<OutputPorts>`)
 - Data flowing into this node is what the parent graph receives on that port
+- **Always required** — even write-only subgraphs with no output ports must include at
+  least one SUBGRAPH_OUTPUT node. checkConfig returns `ERROR: Missing SubgraphOutput
+  component` without it.
 
 ### SUBGRAPH_INPUT — receives data from the parent graph's port:
 ```xml
