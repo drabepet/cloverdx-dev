@@ -64,28 +64,7 @@ When generating graph XML:
 - `guiX` / `guiY` on every node so the graph renders sensibly in Designer
 - Wrap everything in `<Phase number="0">` unless multi-phase ordering is needed
 
-**Minimal example — CSV to DB:**
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<Graph name="LoadCustomers" author="dev" created="2024-01-01" nature="graph">
-  <Global>
-    <Metadata fileURL="${META_DIR}/Customers.fmt" id="META_CUSTOMERS"/>
-    <Connection dbConfig="${CONN_DIR}/database.cfg" id="CONN_DB" type="JDBC"/>
-    <GraphParameters>
-      <GraphParameterFile fileURL="workspace.prm"/>
-    </GraphParameters>
-  </Global>
-  <Phase number="0">
-    <Node id="READ_CUSTOMERS" type="FLAT_FILE_READER"
-          fileURL="${DATAIN_DIR}/customers.csv" guiX="24" guiY="100"/>
-    <Node id="WRITE_CUSTOMERS" type="DB_OUTPUT_TABLE"
-          dbConnection="CONN_DB" dbTable="customers" batchMode="true"
-          guiX="300" guiY="100"/>
-    <Edge id="E0" fromNode="READ_CUSTOMERS:0" toNode="WRITE_CUSTOMERS:0"
-          metadata="META_CUSTOMERS"/>
-  </Phase>
-</Graph>
-```
+See `references/graph-xml.md` for annotated full examples.
 
 ### Modifying Existing Graphs
 
@@ -104,17 +83,7 @@ Read `references/ctlref.md` first, then the relevant function sub-file.
 - Return values: `ALL` (all ports), `OK` / `0` (port 0), `SKIP` (discard), integer N (port N)
 - Null check before using any nullable field: `if (!isnull($in.0.field)) { ... }`
 
-**Common pattern — transform with null guard and type conversion:**
-```ctl
-//#CTL2
-function integer transform() {
-    $out.0.* = $in.0.*;
-    $out.0.fullName = isnull($in.0.firstName) ? "" : trim($in.0.firstName)
-                      + " " + trim($in.0.lastName);
-    $out.0.totalPaid = isnull($in.1.paidAmount) ? 0.0d : $in.1.paidAmount;
-    return ALL;
-}
-```
+See `references/ctlref.md` for patterns and `references/ctl-*.md` for function reference.
 
 ### Building Jobflows
 
@@ -127,30 +96,9 @@ Read `references/jobflow-xml.md` for the full XML structure.
 - **Fail / Success** — explicit termination nodes
 - `stopOnFail="false"` on ExecuteGraph is required for retry patterns
 
-**Sequential jobflow example:**
-```xml
-<Node id="EXEC_CUSTOMERS" type="EXECUTE_GRAPH"
-      jobURL="${GRAPH_DIR}/LoadCustomers.grf" executorsNumber="1"
-      stopOnFail="true" guiX="100" guiY="100">
-  <attr name="inputMapping"><![CDATA[
-//#CTL2
-function integer transform() {
-    $out.0.executionLabel = "LoadCustomers";  // shown in Server tracking UI
-    $out.1.truncate = getParamValue("TRUNCATE_TABLE");  // passed to child graph
-    return ALL;
-}
-  ]]></attr>
-</Node>
-<Node id="EXEC_ORDERS" type="EXECUTE_GRAPH"
-      jobURL="${GRAPH_DIR}/LoadOrders.grf" executorsNumber="1"
-      stopOnFail="true" guiX="350" guiY="100"/>
-<Edge id="E0" fromNode="EXEC_CUSTOMERS:0" toNode="EXEC_ORDERS:0"/>
-```
-
-- `jobURL` — correct attribute for EXECUTE_GRAPH (not `graphURL`)
-- `executorsNumber="1"` — required; set higher only for fan-out from LIST_FILES
-- `$out.0.executionLabel` — tracking label visible in Server UI
-- `$out.1.*` — parameters passed into the child graph
+Key EXECUTE_GRAPH attributes: `jobURL` (not `graphURL`), `executorsNumber="1"`, `stopOnFail`.
+In `inputMapping`: `$out.0.executionLabel` = tracking label, `$out.1.*` = child graph params.
+See `references/jobflow-xml.md` for full examples.
 
 **After writing: run `bash scripts/checkconfig.sh <sandbox> <file>` and fix all issues before presenting.**
 
@@ -168,19 +116,8 @@ Read `references/dataservice-xml.md` for the full XML structure.
 - `topLevelArray="true"` on RESTJOB_OUTPUT returns `[]` for empty results, not an error
 - CORS is configured at the server level, not in the `.rjob` file
 
-**GET by ID example:**
-```xml
-<EndpointSettings>
-  <UrlPath>/customers/{id}</UrlPath>
-  <RequestMethod>GET</RequestMethod>
-  <RequestParameter location="url_path" name="id" type="string" required="true"/>
-</EndpointSettings>
-```
-```ctl
-// In ExtFilter filterExpression:
-//#CTL2
-num2str($in.0.id) == getParamValue("id")
-```
+URL path params via `<RequestParameter location="url_path">`, read in CTL2 with `getParamValue("name")`.
+See `references/dataservice-xml.md` for GET/POST/upload examples.
 
 **After writing: run `bash scripts/checkconfig.sh <sandbox> <file>` and fix all issues before presenting.**
 
