@@ -178,6 +178,45 @@ CLOVER_PASS=clover
 
 ---
 
+## Running Jobs — On-Demand Execution
+
+**Only run a job if the user explicitly asks.** Never auto-execute after validation.
+
+Use the script bundled in this skill:
+
+```bash
+# Basic — run a graph or jobflow:
+bash scripts/run-job.sh <sandbox> <path/inside/sandbox>
+
+# With input parameters:
+bash scripts/run-job.sh MySandbox graph/LoadCustomers.grf hireAge=25 region=EU
+```
+
+**Exit codes:** `0` = FINISHED_OK · `1` = job failed (log printed) · `2` = server unreachable
+
+**Full workflow when user asks to run a job:**
+1. Confirm `checkconfig.sh` passed first (or run it now if not done)
+2. Run `bash scripts/run-job.sh <sandbox> <file> [params]`
+3. Script polls until complete — prints status every 3s
+4. On `FINISHED_OK`: offer to fetch tracking (`retrieve_tracking_get`) for record counts
+5. On failure: read the log lines printed by the script, correlate with graph XML, suggest fix
+
+**Environment overrides:**
+```bash
+CLOVER_HOST=http://localhost:8083   # change for remote server
+CLOVER_USER=clover
+CLOVER_PASS=clover
+POLL_INTERVAL=3                     # seconds between polls
+MAX_WAIT=600                        # abort polling after 10 min
+```
+
+**If the script is missing execute permission:**
+```bash
+chmod +x scripts/run-job.sh
+```
+
+---
+
 ## Debugging and Diagnostics
 
 Read `references/debugging.md` for the full workflow.
