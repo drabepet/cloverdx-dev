@@ -148,7 +148,7 @@ Sends the HTTP response:
 **Key RESTJOB_OUTPUT attributes:**
 | Attribute | Description | Values |
 |---|---|---|
-| `responseFormat` | Output serialization | `JSON`, `XML`, `CSV`, `${FORMAT}` |
+| `responseFormat` | Output serialization | `JSON`, `XML`, `CSV` (only — see note below) |
 | `topLevelArray` | Wrap records in a JSON array at root level | `true` / `false` |
 | `metadataName` | Include record name as JSON object wrapper | `true` / `false` |
 | `contentType` | Explicit Content-Type header | e.g., `application/json` |
@@ -156,6 +156,28 @@ Sends the HTTP response:
 **`topLevelArray="true"` vs `false`:**
 - `true` → `[{...}, {...}]` (array of records)
 - `false` → `{...}` (single object — use for single-record responses)
+
+> **`responseFormat="RAW"` is not valid** — valid values are `JSON`, `XML`, `CSV` only.
+> To serve HTML from a data service, use `responseFormat="CSV"` with
+> `contentType="text/html"` — CloverDX passes the raw field value through as-is:
+> ```xml
+> <Node id="RESTJOB_OUTPUT0" type="RESTJOB_OUTPUT"
+>       responseFormat="CSV"
+>       contentType="text/html"
+>       guiX="500" guiY="100"/>
+> ```
+
+**SQL parameter injection from URL path/query params** — for `DB_INPUT_TABLE` inside
+a `.rjob`, parameters declared in `<EndpointSettings>` can be referenced directly in
+SQL using `${paramName}` syntax:
+```xml
+<attr name="sqlQuery"><![CDATA[
+SELECT * FROM customers WHERE id = ${customerId}
+]]></attr>
+```
+This works when `customerId` is declared as a `<RequestParameter>` in
+`<EndpointSettings>`. For untrusted or user-supplied values, prefer ExtFilter with
+`getParamValue()` to avoid SQL injection risk.
 
 ---
 

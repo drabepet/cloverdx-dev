@@ -542,3 +542,16 @@ Read all fields as `string` in input metadata → Reformat validates + parses �
 - Use generic field names (`field1`, `field2`) — always use business names
 - Skip `timeZone` on date fields — leads to DST-related data corruption
 - Omit `scale` on decimal fields used in financial calculations
+
+**Always inspect line endings before setting `recordDelimiter`:**
+
+```bash
+od -c yourfile.csv | head -5
+# \n only   → Unix LF     → recordDelimiter="\n"
+# \r \n     → Windows CRLF → recordDelimiter="\r\n"
+# both      → mixed        → recordDelimiter="\n|\r\n"
+```
+
+Do not default to `\n|\r\n` for all files — use the exact delimiter that matches the
+source. Using `\n|\r\n` on a pure LF file works but is imprecise; using `\n` on a CRLF
+file leaves `\r` as a trailing character on every string field.

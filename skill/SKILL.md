@@ -264,7 +264,7 @@ Load only what the current task requires — you don't need to read all of them.
 **Components** — start with `components.md`, then load the relevant sub-file
 - `components.md` · `comp-readers.md` · `comp-writers.md` · `comp-transformers.md`
 - `comp-joiners.md` · `comp-sorters-routing.md` · `comp-jobflow.md`
-- `comp-dataservices.md` · `comp-subgraphs.md`
+- `comp-dataservices.md` · `comp-subgraphs.md` · `comp-file-operations.md`
 
 **XML structure**
 - `graph-xml.md` — `.grf` structure with annotated real examples

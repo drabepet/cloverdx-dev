@@ -87,9 +87,29 @@ These are the internal connection points that map to the declared ports.
 
 - `outputPortIndex` — which output port (matches declaration order in `<OutputPorts>`)
 - Data flowing into this node is what the parent graph receives on that port
-- **Always required** — even write-only subgraphs with no output ports must include at
-  least one SUBGRAPH_OUTPUT node. checkConfig returns `ERROR: Missing SubgraphOutput
-  component` without it.
+- **Always required — no exceptions.** Even write-only subgraphs with no logical output
+  must include at least one SUBGRAPH_OUTPUT node. checkConfig returns
+  `ERROR: Missing SubgraphOutput component` without it.
+
+**Write-only subgraph pattern** (e.g., subgraph that writes to DB or file):
+Use SimpleCopy to fork the stream — one branch to the writer, one to SUBGRAPH_OUTPUT.
+Declare the port as `required="false" keepEdge="true"` so parent graphs don't need to
+connect it:
+
+```xml
+<OutputPorts>
+    <SinglePort id="PORT_PASSTHROUGH" name="passthrough" metadata="META_DATA"
+                required="false" keepEdge="true"/>
+</OutputPorts>
+...
+<Node id="COPY0" type="SIMPLE_COPY" guiX="200" guiY="100"/>
+<Node id="WRITE0" type="DB_OUTPUT_TABLE" ... guiX="400" guiY="50"/>
+<Node id="SUBGRAPH_OUTPUT0" type="SUBGRAPH_OUTPUT" outputPortIndex="0" guiX="400" guiY="150"/>
+
+<Edge fromNode="SUBGRAPH_INPUT0:0" toNode="COPY0:0" metadata="META_DATA"/>
+<Edge fromNode="COPY0:0" toNode="WRITE0:0" metadata="META_DATA"/>
+<Edge fromNode="COPY0:1" toNode="SUBGRAPH_OUTPUT0:0" metadata="META_DATA"/>
+```
 
 ### SUBGRAPH_INPUT — receives data from the parent graph's port:
 ```xml
@@ -211,19 +231,21 @@ The parent may or may not connect the error port.
 
 ## Using a Subgraph in a Parent Graph
 
-In the parent `.grf`, a subgraph is referenced as a Node with `type="SUBGRAPH"` (or
-the subgraph's component type name if registered) and `subgraphURL` pointing to the
-`.sgrf` file:
+In the parent `.grf`, a subgraph is referenced as a Node with `type="SUBGRAPH"` and
+`jobURL` pointing to the `.sgrf` file:
 
 ```xml
 <Node id="ORDERS_READER" type="SUBGRAPH"
-      subgraphURL="${GRAPH_DIR}/subgraph/OrdersReader.sgrf"
+      jobURL="${GRAPH_DIR}/subgraph/OrdersReader.sgrf"
       guiX="24" guiY="100"/>
 
 <!-- Connect the subgraph's output port 0 to downstream processing -->
 <Edge id="E0" fromNode="ORDERS_READER:0" toNode="PROCESS_ORDERS:0"
       metadata="META_ORDERS"/>
 ```
+
+> **`jobURL` not `subgraphURL`** — the server only accepts `jobURL`. Using `subgraphURL`
+> will cause a validation error.
 
 Parameters declared in the subgraph's `<GraphParameters>` appear in the parent's
 component parameter panel when you select the subgraph node in Designer.

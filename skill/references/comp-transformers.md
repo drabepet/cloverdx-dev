@@ -288,6 +288,25 @@ sorted: false
 - `sorted=true` — streams through data, O(1) memory, requires pre-sorted input
 - `sorted=false` — keeps all groups in memory, works on any input order
 
+**Boolean key fields become strings in output** — when aggregating on a boolean field
+(e.g., `isActive`), the Aggregate component outputs the key as a string (`"true"` /
+`"false"`), not as a boolean. Define the output metadata with the key field as
+`type="string"` to avoid type mismatch errors downstream.
+
+**Mapping must not start with a newline after `<![CDATA[`** — a leading newline causes
+a parse error. Always write the mapping on the same line as the CDATA open:
+
+```xml
+<!-- Correct -->
+<attr name="mapping"><![CDATA[$state:=$state;$count:=count();]]></attr>
+
+<!-- Wrong — leading newline causes parse error -->
+<attr name="mapping"><![CDATA[
+$state:=$state;
+$count:=count();
+]]></attr>
+```
+
 ---
 
 ## DataGenerator
@@ -299,6 +318,22 @@ Generates synthetic records without any input. Used for initializing sequences, 
 |---|---|
 | `recordCount` | Number of records to generate |
 | `randomSeed` | Seed for reproducible random data |
-| `transform` | CTL2 to populate generated records |
+| `generate` | CTL2 to populate generated records |
+
+> **`generate` not `transform`** — using `<attr name="transform">` produces a
+> "No generator specified" warning and generates empty records.
+
+```xml
+<Node id="DATA_GEN" type="DATA_GENERATOR" recordCount="1" guiX="24" guiY="100">
+    <attr name="generate"><![CDATA[
+//#CTL2
+function integer generate() {
+    $out.0.requestId = getParamValue("ID");
+    $out.0.timestamp = today();
+    return ALL;
+}
+    ]]></attr>
+</Node>
+```
 
 Commonly used in data services to emit a single "start" record or build a response body.

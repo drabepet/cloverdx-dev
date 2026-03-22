@@ -13,7 +13,7 @@ Runs a child graph. Replaces deprecated `RunGraph`.
 **Key properties:**
 | Property | Description | Example |
 |---|---|---|
-| `graphURL` | Path to .grf file | `${GRAPH_DIR}/loadPayments.grf` |
+| `jobURL` | Path to .grf/.jbf/.sgrf file | `${GRAPH_DIR}/loadPayments.grf` |
 | `inputMapping` | CTL2 to pass parameters to child graph | see below |
 | `outputMapping` | CTL2 to extract results from child graph | see below |
 | `stopOnFail` | Abort jobflow if child fails | `false` (for retry/conditional patterns) |
@@ -25,7 +25,7 @@ Runs a child graph. Replaces deprecated `RunGraph`.
 ```ctl
 // $out.1.* = child graph input port
 function integer transform() {
-    $out.1.fileUrl = $in.0.url;           // file discovered by LIST_FILES
+    $out.1.fileUrl = $in.0.URL;           // file discovered by LIST_FILES
     $out.1.truncate = getParamValue("TRUNCATE_TABLE");
     return ALL;
 }
@@ -120,12 +120,13 @@ Discovers files matching a glob pattern and emits one record per file. Used to d
 |---|---|---|
 | `fileURL` | Glob pattern | `${DATAIN_DIR}/Payments-*.csv` |
 
-**Output fields:** `url`, `name`, `size`, `lastModified`, etc.
+**Output fields:** `URL` (uppercase), `name`, `size`, `lastModified`, `isFile`, `isDirectory`, `canRead`, etc.
+See `references/comp-file-operations.md` for full field list and patterns.
 
 **Pattern — process each file with a separate graph run** (09e05a):
 ```
 ListFiles(Payments-*.csv) → ExecuteGraph(loadPayments.grf)
-                             inputMapping: $out.1.fileUrl = $in.0.url
+                             inputMapping: $out.1.fileUrl = $in.0.URL
 ```
 
 ---
