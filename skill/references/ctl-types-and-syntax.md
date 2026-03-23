@@ -169,6 +169,40 @@ a = condition ? valueIfTrue : valueIfFalse;
 a = c < d ? c : d;  // min(c, d)
 ```
 
+### Null + string — silent data corruption gotcha
+
+CTL2 does **not** throw a NullPointerException when you concatenate null with a string using `+`. Instead it silently coerces null to the string `"null"`:
+
+```ctl
+string s = null;
+s = s + " suffix";   // s == "null suffix"  ← silent corruption, not an error
+```
+
+This differs from `+=` (compound assign), which treats a null left-hand side as an empty string:
+```ctl
+string s = null;
+s += " suffix";      // s == " suffix"  ← null treated as ""
+```
+
+And from `concat()`, which also coerces null to `"null"`:
+```ctl
+concat("a", null, "b")              // → "anullb"
+concatWithSeparator(",", "a", null, "b")  // → "a,b"  ← null omitted!
+```
+
+**Rule:** always `isnull()`-check nullable string fields before using `+` or `concat()`. The real risk is not a crash — it's `"null"` appearing in your output data.
+
+### Decimal division — precision gotcha
+
+Dividing by a double literal uses floating-point arithmetic even when the result is assigned to a decimal:
+
+```ctl
+decimal result = $in.0.amount / 100.0;   // ← uses double arithmetic, may lose precision
+decimal result = $in.0.amount / 100.0D;  // ← correct: forces decimal arithmetic
+```
+
+Always use the `D` suffix on decimal literals in arithmetic expressions.
+
 ### Conditional Fail (interpreted mode only)
 
 ```ctl

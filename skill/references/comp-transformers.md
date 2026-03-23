@@ -194,8 +194,8 @@ function integer transform() {
 function void clean() {
     paymentCounts["CASH"] = 0;
     paymentCounts["CARD"] = 0;
-    paymentAmounts["CASH"] = 0.0d;
-    paymentAmounts["CARD"] = 0.0d;
+    paymentAmounts["CASH"] = 0.0D;
+    paymentAmounts["CARD"] = 0.0D;
 }
 ```
 
@@ -217,8 +217,8 @@ Like Denormalizer but also emits summary/subtotal rows in addition to group rows
 function void initGroup(ProfitMarginReport acc) {
     acc.* = $in.0.*;
     acc.totalItemsSold = 0;
-    acc.totalAmount = 0.0d;
-    acc.netProfit = 0.0d;
+    acc.totalAmount = 0.0D;
+    acc.netProfit = 0.0D;
 }
 
 function boolean updateGroup(ProfitMarginReport acc) {
@@ -235,7 +235,7 @@ function integer updateTransform(integer counter, ProfitMarginReport acc) {
 }
 
 function boolean finishGroup(ProfitMarginReport acc) {
-    acc.profitPercent = decimal2double(round(acc.netProfit / (acc.totalAmount / 100.0d), 2));
+    acc.profitPercent = decimal2double(round(acc.netProfit / (acc.totalAmount / 100.0D), 2));
     acc.profitMarginCategory = "ALL";   // mark as subtotal row
     return true;
 }

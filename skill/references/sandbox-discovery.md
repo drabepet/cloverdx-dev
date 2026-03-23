@@ -107,19 +107,33 @@ Look for:
 
 ## Step 5 — MCP Server Context (if connected)
 
-When connected to a CloverDX Server via MCP:
+When connected to a CloverDX Server via MCP, read `references/mcp-workflows.md` for full call sequences and parameter details. Quick discovery sequence:
 
 ```
-1. deployment_current     — Server version, DB type, JVM config, cluster topology
-                            Always call this first — anchors all advice to the real environment
-2. list_performance_logs  — Recent heap/CPU patterns (baseline load check)
-3. retrieve_tracking_get  — Execution history (any recent failures?)
-4. retrieve_sandbox_file  — Read the server-side version of files
-                            (may differ from local if not synced)
+1. deployment_current
+      → Server version, Java version, Worker heap config, cluster topology,
+        sandbox home path. Always call this first — anchors all subsequent advice.
+        Note the Worker Xmx (heap ceiling) and sandbox home path.
+
+2. list_performance_logs (recent window)
+      → Baseline load check: is wHeap already high? Any swap? Is jobQueue growing?
+
+3. retrieve_tracking_get (recent runs)
+      → Any recent failures? When was the last successful run?
+        Note: this also gives you runIds for failed jobs needing diagnosis.
+
+4. retrieve_sandbox_file workspace.prm
+      → Verify server-side parameter values match the environment.
+        The server copy may differ from local if deployment wasn't synced.
 ```
 
-Cross-check: if local files differ from server-side files, ask the user which is
-authoritative before making changes.
+Cross-check: if local files differ from server-side files, ask the user which is authoritative before making changes.
+
+**What to note from `deployment_current` output:**
+- Server version → scope advice to that version
+- Worker heap Xmx → interpret `wHeap` numbers as % of this value
+- Sandbox home path → needed for `retrieve_sandbox_file` calls
+- Cluster size → 1 node vs multi-node changes diagnosis approach
 
 ---
 

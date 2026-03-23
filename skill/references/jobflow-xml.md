@@ -45,8 +45,9 @@ metadata definitions (jobflows don't read/write records directly — they orches
 
 ## Jobflow Node Types
 
-All jobflow nodes appear inside `<Phase number="0">` (jobflows are always single-phase;
-control flow is expressed through LOOP and CONDITION, not phase sequencing).
+Jobflow nodes appear inside `<Phase>` blocks. **Phases are available in jobflows but rarely needed** — token flow already provides ordering. Single-phase (`<Phase number="0">`) is the strong convention; multi-phase is allowed but unusual. Control flow is expressed through LOOP and CONDITION, not phase sequencing.
+
+**Execution model:** Components execute one-at-a-time, triggered by tokens — fundamentally different from graphs where all components in a phase stream records concurrently. Default edge type changes to **"Direct fast propagate"** (no buffer, immediate token delivery). **Never use jobflows for data transformation** — a subgraph that takes 10 seconds in a graph can take 7+ minutes in a jobflow due to per-token overhead.
 
 ### EXECUTE_GRAPH — Run a child graph
 
@@ -58,6 +59,7 @@ control flow is expressed through LOOP and CONDITION, not phase sequencing).
     <attr name="inputMapping"><![CDATA[
 //#CTL2
 function integer transform() {
+    $out.0.executionLabel = "Loading customers";
     $out.1.fileUrl = $in.0.URL;
     $out.1.truncate = getParamValue("TRUNCATE_TABLE");
     return ALL;
@@ -66,7 +68,7 @@ function integer transform() {
     <attr name="outputMapping"><![CDATA[
 //#CTL2
 function integer transform() {
-    $out.0.fileUrl = $in.1.fileUrl;
+    $out.0.status = $in.1.status;
     $out.0.recordCount = $in.3.outputPort_0_totalRecords;
     return ALL;
 }
@@ -81,43 +83,47 @@ function integer transform() {
 | `stopOnFail` | Abort jobflow if child fails | `true` |
 | `executionType` | `synchronous` or `asynchronous` | `synchronous` |
 | `executorsNumber` | Max concurrent instances (when fed by LIST_FILES) | `1` |
-| `redirectErrorOutput` | Capture child's stderr | `false` |
-| `executionLabel` | Per-run label in tracking (CTL2 expression) | — |
+| `redirectErrorOutput` | Route all output (success AND error) to port 0 | `false` |
+| `executionLabel` | Per-run label in tracking (CTL2 string expression) | — |
 
 **inputMapping port convention:**
-- `$in.0.*` — record from the jobflow's input edge (e.g., from LIST_FILES or GET_JOB_INPUT)
-- `$out.0.executionLabel` — per-run label shown in Server tracking UI (CTL2 string expression)
-- `$out.1.*` — parameters passed into the child graph (mapped to child's GraphParameters)
+- `$out.0.executionLabel` — label shown in Server tracking UI (string CTL2 expression)
+- `$out.1.*` — parameters passed into the child graph (mapped to child's `<GraphParameters>`)
+- `$in.0.*` — incoming token data (e.g., from LIST_FILES or GET_JOB_INPUT)
 
-Both `$out.0.executionLabel` and `$out.1.*` are almost always used together:
-```ctl
-//#CTL2
-function integer transform() {
-    $out.0.executionLabel = "Loading: " + $in.0.URL;  // tracking label
-    $out.1.fileUrl = $in.0.URL;                        // child graph parameter
-    $out.1.truncate = getParamValue("TRUNCATE_TABLE");
-    return ALL;
-}
-```
+**Note:** The child graph must declare `<GraphParameter>` entries for each field you write to `$out.1.*`. If the parameter doesn't exist in the child's XML, the value is silently ignored.
 
-**outputMapping port convention:**
-- `$in.1.*`, `$in.2.*`, `$in.3.*` — child graph output ports
-- `$out.0.*` — record accumulated in the jobflow for downstream processing
+**outputMapping port convention — the full RunStatus record:**
+- `$in.0.*` — pass-through of the original input token
+- `$in.1.*` — the RunStatus record (see table below)
+- `$in.2.*` — child's output Dictionary entries (fields declared `output="true"`)
+- `$in.3.*` — tracking metadata (per-component record counts)
 
-**LIST_FILES output record schema (field names are case-sensitive):**
+**RunStatus fields (all available on `$in.1.*`):**
 | Field | Type | Description |
 |---|---|---|
-| `URL` | string | Full file URL (use this in `jobURL` / `fileURL` mappings) |
-| `name` | string | Filename only |
-| `size` | long | File size in bytes |
-| `lastModified` | date | Last modification timestamp |
-| `isFile` | boolean | True if it's a regular file |
-| `isDirectory` | boolean | True if it's a directory |
-| `canRead` | boolean | Read permission flag |
+| `runId` | long | Unique execution ID — use with MonitorGraph or KillGraph |
+| `originalJobURL` | string | Resolved path to the executed file |
+| `status` | string | `FINISHED_OK` · `ERROR` · `ABORTED` · `TIMEOUT` · `RUNNING` (async) · `UNKNOWN` |
+| `errMessage` | string | Error message (failed graphs only) |
+| `errComponent` | string | Component ID that caused failure |
+| `errComponentType` | string | Type string of failing component |
+| `startTime` | long | Start timestamp (ms) |
+| `endTime` | long | End timestamp (ms, null for async) |
+| `duration` | long | Elapsed time in milliseconds |
 
-**Auto-named output fields from child graph:**
-When the child graph uses a component with tracking enabled, outputMapping can read
-fields like `$in.3.outputPort_0_COMPONENT_ID_totalRecords` (port 3 = tracking metadata).
+**`FINISHED_OK` is the correct status string for a successful run.** Use `$in.1.status == "FINISHED_OK"` in outputMapping and downstream EXT_FILTER/CONDITION checks.
+
+**stopOnFail failure modes — understand all three:**
+
+| Configuration | When child fails | Jobflow outcome |
+|---|---|---|
+| `stopOnFail="true"` (default) | Jobflow aborts immediately | FAIL — no error handling possible |
+| `stopOnFail="false"` + error port **connected** | Token routes to port 1 | Continues — you handle failure |
+| `stopOnFail="false"` + `redirectErrorOutput="true"` | All output to port 0 | **Silent failure** — check `$in.1.status` downstream or you'll never know |
+| `stopOnFail="false"` + **no error port connected** | Java exception propagates | FAIL — same as stopOnFail=true |
+
+**⚠️ Silent failure gotcha:** `redirectErrorOutput="true"` is commonly used in retry patterns, but if downstream logic doesn't check `$in.1.status != "FINISHED_OK"`, all child failures are silently swallowed and the jobflow reports success.
 
 ---
 
@@ -231,12 +237,112 @@ $in.0.attemptCounter >= getParamValue("RETRY_COUNT")
       guiX="24" guiY="100"/>
 ```
 
-Emits one record per matching file. Feed directly into EXECUTE_GRAPH with
-`executorsNumber` for bounded parallelism.
+Emits one record per matching entry (files **and subdirectories**). Feed into EXECUTE_GRAPH with `executorsNumber` for bounded parallelism.
+
+**Output record schema (field names are case-sensitive):**
+| Field | Type | Description |
+|---|---|---|
+| `URL` | string | Full file URL — use this in `jobURL` / `fileURL` mappings |
+| `name` | string | Filename only |
+| `size` | long | File size in bytes |
+| `lastModified` | date | Last modification timestamp |
+| `isFile` | boolean | `true` for regular files |
+| `isDirectory` | boolean | `true` for directories |
+| `canRead` | boolean | Read permission flag |
+
+**⚠️ Always filter on `isFile`** — LIST_FILES emits directories too. Without a filter, EXECUTE_GRAPH receives directories and fails with confusing errors:
+```xml
+<Node id="FILTER_FILES" type="EXT_FILTER" guiX="200" guiY="100">
+    <attr name="filterExpression"><![CDATA[//#CTL2
+$in.0.isFile == true]]></attr>
+</Node>
+```
+Connect LIST_FILES port 1 (rejected) to a TrashWriter.
+
+**⚠️ Output mapping is empty by default** — if you forget to configure inputMapping on EXECUTE_GRAPH, all downstream parameters are blank/null. Always explicitly map `$out.1.fileUrl = $in.0.URL` (or equivalent).
+
+**Parallel vs sequential:** When LIST_FILES emits multiple tokens, EXECUTE_GRAPH processes them **in parallel by default** (each token triggers an independent execution). Set `executorsNumber="1"` to enforce sequential processing. There are no ordering guarantees for parallel execution.
+
+### CONDITION — Boolean branch
+
+Routes a token to port 0 (true) or port 1 (false) based on a CTL2 boolean expression. Identical syntax to EXT_FILTER. Use CONDITION when branching on job outcome (e.g., status check); use EXT_FILTER when filtering record streams within a graph.
+
+```xml
+<Node id="CHECK_OK" type="CONDITION" guiX="400" guiY="150">
+    <attr name="condition"><![CDATA[
+//#CTL2
+function boolean isTrue() {
+    return $in.0.status == "FINISHED_OK";
+}
+    ]]></attr>
+</Node>
+```
+
+- Port 0 = condition true → success path
+- Port 1 = condition false → error path / FAIL
 
 ---
 
-## Edges in Jobflows
+### SET_JOB_OUTPUT — Pass data from child to parent
+
+Writes values from the current graph/jobflow into output dictionary entries so the parent's `outputMapping` can read them via `$in.2.*`.
+
+```xml
+<!-- In child graph — write results back to parent -->
+<Node id="SET_OUTPUT" type="SET_JOB_OUTPUT" guiX="700" guiY="100">
+    <attr name="mapping"><![CDATA[
+//#CTL2
+function integer transform() {
+    setDictionaryValue("recordCount", $in.0.count);
+    setDictionaryValue("status", "OK");
+    return ALL;
+}
+    ]]></attr>
+</Node>
+```
+
+The parent then reads these in outputMapping:
+```ctl
+$out.0.recordCount = $in.2.recordCount;   // $in.2.* = child's output dictionary
+$out.0.childStatus = $in.2.status;
+```
+
+**Key rules:**
+- Dictionaries are **private** per graph — the parent cannot directly read a child's dictionary
+- Only fields declared `output="true"` in the child's `<Dictionary>` are accessible
+- Parameters are **one-way** (parent → child only) — use SetJobOutput/Dictionary for child → parent data flow
+- SetJobOutput **overwrites** on each call — the last record processed wins
+
+---
+
+### TOKEN_GATHER — Merge token streams
+
+Collects tokens from multiple input ports and routes them through a single output port. Does NOT synchronize or wait — use BARRIER for parallel synchronization.
+
+```xml
+<!-- Collect error tokens from multiple sequential branches into one error handler -->
+<Node id="GATHER_ERRORS" type="TOKEN_GATHER" guiX="600" guiY="200"/>
+```
+
+**TokenGather vs Barrier:**
+- **TokenGather** — sequential error collection. Merges token streams from separate branches into one downstream error handler (e.g., send a single failure email after 3 sequential steps).
+- **Barrier** — parallel synchronization. Waits for ALL tokens from concurrent branches, evaluates group success/failure (`$status == "FINISHED_OK"`), emits one aggregated result.
+
+---
+
+### SLEEP — Introduce delay
+
+Pauses execution for a configurable time. Used in retry loops to wait before retrying a failed job.
+
+```xml
+<Node id="WAIT_BEFORE_RETRY" type="SLEEP"
+      delay="30000"
+      guiX="500" guiY="200"/>
+```
+
+**⚠️ Buffering gotcha:** By default, the outgoing edge may buffer tokens and not deliver them immediately after the delay expires. If token timing matters (e.g., in a retry loop where the next iteration must start promptly), set the outgoing edge type to **"Direct fast propagate"** in the Designer. The `delay` can also be read dynamically from an input field named `delay` (long, milliseconds).
+
+---
 
 Jobflow edges carry status/tracking records, not business data. They often have no
 `metadata` attribute — this is normal and correct.
@@ -452,10 +558,32 @@ function integer transform() {
 
 ---
 
-## Gotchas
+## Gotchas and Common Mistakes
 
-- **`stopOnFail="false"` is required for retry patterns** — otherwise the jobflow aborts on first child failure before the retry logic can run.
-- **LOOP always needs a loop-back edge** — the output of the loop body must connect back to LOOP input port 0. Missing this edge causes infinite loop or graph error.
-- **Jobflow edges carry no business metadata** — this is normal. Control flow edges just propagate the execution token.
-- **ExecuteGraph replaces deprecated RunGraph** — always use EXECUTE_GRAPH (`type="EXECUTE_GRAPH"`), never `type="RUN_GRAPH"`.
-- **Dictionary vs GraphParameters for state** — use Dictionary when you need to share data between graphs (parent writes, child reads). Use GraphParameters for configuration values known at design time.
+**`stopOnFail="false"` is required for retry patterns** — otherwise the jobflow aborts on first child failure before retry logic can run.
+
+**LOOP always needs a loop-back edge** — output of the loop body must connect back to LOOP input port 0. Missing this edge causes an error or infinite hang.
+
+**Silent failure with `redirectErrorOutput="true"`** — all output routes to port 0, including failures. If downstream logic doesn't check `$in.1.status != "FINISHED_OK"`, all child failures are silently swallowed and the jobflow reports success.
+
+**`stopOnFail="false"` + no error port = same as `stopOnFail="true"`** — if EXECUTE_GRAPH's error port (port 1) is left unconnected, Java exception propagation aborts the jobflow regardless of the setting. Always connect port 1 to a FAIL, TOKEN_GATHER, or TrashWriter.
+
+**LIST_FILES emits directories** — always filter on `isFile == true` immediately after LIST_FILES.
+
+**LIST_FILES output mapping is empty by default** — child graph parameters are blank unless you explicitly map them in inputMapping.
+
+**Parallel is the default with multiple tokens** — when LIST_FILES emits N tokens, EXECUTE_GRAPH runs N instances in parallel. Set `executorsNumber="1"` to enforce sequential. With `stopOnFail="true"` and `executorsNumber > 1`, a failure aborts all in-flight instances immediately (not just future ones).
+
+**Child graph parameters are silently ignored if undeclared** — `$out.1.myParam` in inputMapping has no effect if the child graph doesn't declare `<GraphParameter name="myParam">`. No error is thrown.
+
+**Parameters are one-way (parent → child only)** — child graphs cannot modify parent parameters. Use SetJobOutput + Dictionary output entries for child → parent data flow.
+
+**Async orphan gotcha** — async ExecuteGraph children are killed when the parent finishes unless `executeDaemon="true"`. Don't use async without pairing with MonitorGraph or this attribute.
+
+**`max_running_concurrently` deadlock** — if a job gets stuck (e.g., waiting on a lost DB socket with Linux default TCP keepalive of 7200s), it blocks all subsequent scheduled runs. Mitigation: use JNDI connections, reduce `tcp_keepalive_time`, or implement a server-side watchdog.
+
+**ExecuteGraph replaces deprecated RunGraph** — always use `type="EXECUTE_GRAPH"`, never `type="RUN_GRAPH"`. RunGraph was removed in v7.0.
+
+**Jobflows can now run in Designer (v7.3+)** — older docs say Server is required. Since v7.3, jobflows run in both Designer and Server.
+
+**Jobflow edges carry no business metadata** — control flow edges propagate execution tokens, not records. No `metadata` attribute on edges is normal and correct.

@@ -49,9 +49,11 @@
 - Group + aggregate + subtotals → `Denormalizer` + `Rollup`
 
 **Joining:**
-- Large driver + small lookup (unsorted) → `ExtHashJoin`
-- Both large + sorted → `ExtMergeJoin`
-- Reference data from file/DB → `LookupJoin`
+- Large driver + **small** slave (fits in Worker heap, unsorted ok) → `ExtHashJoin`
+- Both inputs **large** or slave > ~10% of Worker heap → `ExtMergeJoin` (sort both inputs first, zero heap cost)
+- Reference/lookup data from file or DB (keyed access, not full scan) → `LookupJoin`
+
+> **ExtHashJoin memory rule:** The entire slave (port 1) loads into Worker heap. If in doubt, use ExtMergeJoin — the sort overhead is far cheaper than an OOM. Rule of thumb: slave > 500k records or > 500 MB → use ExtMergeJoin.
 
 **Sorting:**
 - Any size dataset → `ExtSort` (disk-based, safe)

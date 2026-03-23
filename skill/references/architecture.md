@@ -70,7 +70,10 @@ Remaining 25% covers OS, JDBC direct memory, and JVM Metaspace.
 scale linearly with memory. Excessive Core heap increases GC pause duration. Always give
 surplus RAM to the Worker or OS disk cache.
 
-**Config:** `worker.maxHeapSize` (MB), `worker.initHeapSize` (MB).
+**Config:** Set Worker heap via one of:
+- Setup GUI: Configuration → Setup → Worker → Maximum heap size (recommended)
+- `clover.properties`: `worker.jvmOptions=-Xmx<size>m -Xms<initsize>m`
+- Docker env var: `CLOVER_WORKER_HEAP_SIZE=<size_in_MB>`
 
 **Alert threshold:** Alarm when combined heap consistently exceeds 80%. Monitor `cHeap`
 (Core) and `wHeap` (Worker) from the 3-second performance log.
@@ -131,7 +134,7 @@ launches new EC2 from new AMI, reconnects to snapshotted database.
 - **Load balancing:** CPU-weighted + memory-weighted (`cluster.lb.cpu.weight`,
   `cluster.lb.memory.weight`, exponents configurable)
 - **Job queue:** Max 100,000 jobs default; backpressure via heap and CPU thresholds
-- **Concurrent jobs:** `executor.max_running_concurrently` — 0 = unlimited (queue-managed)
+- **Concurrent jobs:** Configuration → Setup → Worker → "Maximum jobs running concurrently"
 
 ---
 
@@ -142,7 +145,8 @@ launches new EC2 from new AMI, reconnects to snapshotted database.
 - **Roles:** Viewer (read-only) vs Editor (full modify)
 
 **Infrastructure impact:** Every Wrangler step triggers a partial execution on the Worker.
-Multiple simultaneous users create cumulative load. Scale `worker.maxHeapSize` proportionally.
+Multiple simultaneous users create cumulative load. Scale Worker heap proportionally
+(Configuration → Setup → Worker → Maximum heap size).
 
 **Licensing:** Each active private workspace consumes a Wrangler Seat. Exceeding licensed
 seats disables data previews and job execution.

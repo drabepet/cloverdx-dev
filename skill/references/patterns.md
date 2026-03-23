@@ -2,6 +2,33 @@
 
 > Derived from TrainingExamples sandbox (119 real graphs, jobflows, subgraphs, data services).
 > Each pattern shows the component chain and the key decisions to get right.
+>
+> **Check here before building from scratch** — if your task matches a pattern below, use it
+> as a starting point and adapt. Most common tasks are already solved here.
+
+**Quick index:**
+| # | Pattern | Use when |
+|---|---|---|
+| 1 | CSV → Database Load | Bulk file ingest to a table |
+| 2 | Filter and Split Output | Route records by condition |
+| 3 | Sort → Aggregate | Group-by + sum/count/avg |
+| 4 | Deduplicate | Remove duplicate rows |
+| 5 | Enrich with Join | Merge two large datasets |
+| 6 | Enrich with Lookup Table | Small reference data enrichment |
+| 7 | Normalize | Wide row → many narrow rows |
+| 8 | Denormalize | Many rows → one wide row |
+| 9 | Rollup | Group + subtotals |
+| 10 | REST API Call | Read from external API |
+| 11 | Validate Data | Check data quality, route errors |
+| 12 | Read/Write XML or JSON | Hierarchical format I/O |
+| 13 | Spreadsheet (Excel) | Read/write .xlsx |
+| 14 | Email Notification | Send alert after processing |
+| 15 | Sequential Jobflow | Ordered ETL pipeline |
+| 16 | Jobflow with Stats | Collect record counts across steps |
+| 17 | Retry Jobflow | Auto-retry on failure |
+| 18 | Parallel File Processing | Fan-out: one graph per file |
+| 19 | Reusable Reader Subgraph | Shared input logic |
+| 20 | Data Service — GET List | REST API endpoint |
 
 ---
 
@@ -92,7 +119,7 @@ Key decisions:
 - Both inputs must be sorted on the join key before ExtMergeJoin
 - Use `joinType="leftOuter"` to keep customers with no payments
 - `joinKey` format: `$id(a)#$customerId(a);`
-- For smaller lookup side: ExtHashJoin avoids the sort requirement (loads slave into memory)
+- **ExtHashJoin vs ExtMergeJoin:** ExtHashJoin skips the sort but loads the entire slave (port 1) into Worker heap. Use it only when the slave is small (rule of thumb: < 500k records / < 500 MB). For anything larger, pay the sort cost and use ExtMergeJoin — heap exhaustion is a worse outcome than sort time.
 
 ---
 
@@ -336,19 +363,21 @@ Key decisions:
 
 **Synchronous (bounded concurrency):**
 ```
-ListFiles (*.csv) → ExecuteGraph (executorsNumber=4)
-                         inputMapping: $out.1.fileUrl = $in.0.url
+ListFiles (*.csv) → EXT_FILTER (isFile == true) → ExecuteGraph (executorsNumber=4)
+                                                        inputMapping: $out.1.fileUrl = $in.0.URL
 ```
 
 **Asynchronous (fire and monitor):**
 ```
-ListFiles → ExecuteGraph (executionType=asynchronous) → MonitorGraph
+ListFiles → EXT_FILTER (isFile == true) → ExecuteGraph (executionType=asynchronous) → MonitorGraph
 ```
 
 Key decisions:
+- **Always filter on `isFile == true` immediately after ListFiles** — it emits directories too; passing a directory to ExecuteGraph produces a confusing error with no reference to the real cause. Connect ListFiles port 1 (rejected entries) to a TrashWriter.
 - `executorsNumber` limits concurrent child graphs — prevents heap exhaustion
 - Async pattern fires all jobs immediately then waits; sync pattern keeps a sliding window of N concurrent
-- `inputMapping` passes the file URL to the child graph as a parameter
+- In inputMapping, `$in.0.URL` (uppercase) is the full file path — not `$in.0.url` (lowercase)
+- **Child graph must declare the parameter** that inputMapping writes to (`$out.1.fileUrl`) — silently ignored if absent
 
 ---
 

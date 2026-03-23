@@ -376,7 +376,7 @@ $paidAmount:=sum($paidAmount);
 function integer transform() {
     $out.0.fullName = $in.0.firstName + " " + $in.0.lastName;
     $out.0.email = $in.0.email;
-    $out.0.totalPaid = isnull($in.1.paidAmount) ? 0.0d : $in.1.paidAmount;
+    $out.0.totalPaid = isnull($in.1.paidAmount) ? 0.0D : $in.1.paidAmount;
     return ALL;
 }
         ]]></attr>

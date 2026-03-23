@@ -62,6 +62,10 @@ $out.0.status = nvl2($in.0.email, "HAS_EMAIL", "NO_EMAIL");
 $out.0.label = isnull($in.0.label) ? "default" : $in.0.label;
 ```
 
+**Null + string gotcha:** `null + " suffix"` produces `"null suffix"` — no exception, silent data corruption. Always guard nullable string fields with `isnull()` before concatenation. The `+=` compound operator behaves differently: `null += " suffix"` produces `" suffix"` (null treated as empty string).
+
+**Decimal arithmetic gotcha:** `$in.0.amount / 100.0` uses double (floating-point) arithmetic even when the result goes into a decimal field — this can silently lose precision. Use the `D` suffix to force decimal arithmetic: `$in.0.amount / 100.0D`.
+
 ### Date Operations
 ```ctl
 // Format date to string

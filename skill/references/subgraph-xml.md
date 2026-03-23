@@ -204,7 +204,7 @@ The parent may or may not connect the error port.
         <Node id="VALIDATE" type="EXT_FILTER" guiX="250" guiY="100">
             <attr name="filterExpression"><![CDATA[
 //#CTL2
-!isnull($in.0.orderId) && $in.0.paidAmount > 0.0d
+!isnull($in.0.orderId) && $in.0.paidAmount > 0.0D
             ]]></attr>
         </Node>
 

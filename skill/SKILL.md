@@ -49,22 +49,20 @@ checkConfig until synced. Ask the user to confirm the sandbox root before valida
 
 ### Building New Graphs
 
-Before writing a new graph:
-1. **Check existing metadata** — reuse `.fmt` files, don't create duplicates
-2. **Check existing connections** — reuse connection IDs from `.cfg` / `workspace.prm`
-3. **Match project conventions** — naming, directory structure, parameter usage
-4. **Read `references/graph-xml.md`** for XML structure
-5. **Read `references/components.md`** for component details
-6. **After writing: run `bash scripts/checkconfig.sh <sandbox> <file>` — fix all issues, re-run until exit 0**
+1. **Check `patterns.md` first** — if a pattern matches your use case, start from it
+2. **Check existing metadata** — reuse `.fmt` files, don't create duplicates
+3. **Check existing connections** — reuse connection IDs from `.cfg` / `workspace.prm`
+4. **Pick components** — see `components.md` Quick Decision Guide if unsure
+5. **Read `references/graph-xml.md`** for XML structure and annotated examples
+6. **Run pre-flight checklist** (see below) before writing XML
+7. **Validate: `bash scripts/checkconfig.sh <sandbox> <file>` — fix all issues, re-run until exit 0**
 
-When generating graph XML:
-- Valid XML declaration + `<Graph>` root with `name`, `author`, `created`
-- Unique component IDs with descriptive prefixes: `READ_`, `WRITE_`, `TRANS_`, `JOIN_`
-- Every non-error edge must have a `metadata` attribute or `metadataRef`
-- `guiX` / `guiY` on every node so the graph renders sensibly in Designer
-- Wrap everything in `<Phase number="0">` unless multi-phase ordering is needed
+**Metadata decision rule:**
+- User provides schema explicitly → generate **inline metadata** in `<Global>` AND the `.fmt` file content separately so the user can save it to `${META_DIR}`
+- Existing `.fmt` available → reference it: `<Metadata fileURL="${META_DIR}/Foo.fmt" id="META_FOO"/>`; use `retrieve_sandbox_file` to read it if needed
+- When in doubt, ask before assuming a `.fmt` exists
 
-See `references/graph-xml.md` for annotated full examples.
+**Parameter safety:** Before referencing `${BATCH_SIZE}`, `${COMMIT_SIZE}`, or any workspace parameter, confirm it's defined in `workspace.prm`. If not, define it with a sensible default in the graph's own `<GraphParameters>` block.
 
 ### Modifying Existing Graphs
 
@@ -81,99 +79,99 @@ Read `references/ctlref.md` first, then the relevant function sub-file.
 - Statically typed — type errors caught at compile time, not runtime
 - `$in.0.field` to read, `$out.0.field` to write; ports: `$in.0`, `$in.1`, `$out.0`, etc.
 - Return values: `ALL` (all ports), `OK` / `0` (port 0), `SKIP` (discard), integer N (port N)
-- Null check before using any nullable field: `if (!isnull($in.0.field)) { ... }`
+- **Null + string produces `"null suffix"`, not an error** — always `isnull()` check before using nullable fields in string operations; use `nvl($in.0.field, default)` for compact null-coalescing
+- **Use `decimal` (with `D` suffix) for money** — `number` (double) loses precision; `100.0` is double arithmetic, `100.0D` forces decimal
 
-See `references/ctlref.md` for patterns and `references/ctl-*.md` for function reference.
+**try/catch** (since 5.6) — wrap risky conversions:
+```ctl
+try {
+    $out.0.id = str2long(replace($in.0.rawId, "-", ""));
+} catch (CTLException e) {
+    $out.1.* = $in.0.*;
+    $out.1.errorMessage = "Bad ID: " + e.message;
+    return 1;
+}
+return 0;
+```
+
+**`replace()` regex gotcha** — the pattern argument is a Java regex. To match a literal backslash use four backslashes: `replace(s, "\\\\", "/")`. Escape `.`, `*`, `+`, `(`, etc.
 
 ### Building Jobflows
 
-Read `references/jobflow-xml.md` for the full XML structure.
+Read `references/jobflow-xml.md` and `references/comp-jobflow.md`.
 
-- `nature="jobflow"` on the `<Graph>` root
-- **ExecuteGraph** — runs a child graph (replaces deprecated RunGraph)
-- **Loop** — repeat while a CTL2 condition is true (use for retry, iteration)
-- **GetJobInput** — initialize state or receive parameters from a parent jobflow
-- **Fail / Success** — explicit termination nodes
-- `stopOnFail="false"` on ExecuteGraph is required for retry patterns
-
-Key EXECUTE_GRAPH attributes: `jobURL` (not `graphURL`), `executorsNumber="1"`, `stopOnFail`.
-In `inputMapping`: `$out.0.executionLabel` = tracking label, `$out.1.*` = child graph params.
-See `references/jobflow-xml.md` for full examples.
-
-**After writing: run `bash scripts/checkconfig.sh <sandbox> <file>` and fix all issues before presenting.**
+- `nature="jobflow"` on `<Graph>` root; single-phase convention; **never put data transformation in a jobflow** (~42× slower than a graph)
+- `jobURL` (not `graphURL`) for the child file path; `executorsNumber` controls parallelism (default = 1)
+- **Parameters flow parent → child only** via `inputMapping $out.1.*`; child → parent data flows via `SetJobOutput` + Dictionary `output="true"` entries, read as `$in.2.*` in outputMapping
+- **Know the four `stopOnFail` modes** — `false` + unconnected error port still aborts; `redirectErrorOutput="true"` silently swallows failures unless you check `$in.1.status`
+- **Always filter `LIST_FILES` output on `isFile == true`** — it emits directories too, which crash `EXECUTE_GRAPH`
+- Output mapping RunStatus: `$in.1.status` (`FINISHED_OK` / `ERROR` / `ABORTED`), `$in.1.errMessage`, `$in.1.errComponent`
 
 ### Building Data Services (REST APIs)
 
-Read `references/dataservice-xml.md` for the full XML structure.
+Read `references/dataservice-xml.md` for full structure and GET/POST/upload examples.
 
-- `nature="restJob"` on the `<Graph>` root
-- `<EndpointSettings>` in `<Global>` — defines URL path, HTTP method, and parameters
-- `<RestJobResponseStatus>` — maps job status codes to HTTP status codes (200/400/500)
-- **RESTJOB_INPUT** — receives the HTTP request (needed for POST/file upload, optional for GET)
-- **RESTJOB_OUTPUT** — sends the HTTP response (`responseFormat`, `topLevelArray`, `contentType`)
-- URL path and query parameters accessed in CTL2 via `getParamValue("name")`
-- Use Dictionary to pass data between phases (e.g., capture uploaded filename in phase 0, send response in phase 5)
+- `nature="restJob"` · `<EndpointSettings>` defines URL, method, parameters · `<RestJobResponseStatus>` maps job status codes to HTTP codes
+- URL/query params via CTL2 `getParamValue("name")` · CORS is server-level, not in the `.rjob`
 - `topLevelArray="true"` on RESTJOB_OUTPUT returns `[]` for empty results, not an error
-- CORS is configured at the server level, not in the `.rjob` file
-
-URL path params via `<RequestParameter location="url_path">`, read in CTL2 with `getParamValue("name")`.
-See `references/dataservice-xml.md` for GET/POST/upload examples.
-
-**After writing: run `bash scripts/checkconfig.sh <sandbox> <file>` and fix all issues before presenting.**
 
 ### Building Subgraphs
 
-Read `references/subgraph-xml.md` for the full XML structure.
+Read `references/subgraph-xml.md` for full structure.
 
-- `nature="subgraph"` on the `<Graph>` root
-- Declare ports in `<OutputPorts>` / `<InputPorts>` inside `<Global>`
-- Use `<ComponentReference>` to expose internal component properties as parameters the parent can override
-- `required="false" keepEdge="true"` on optional output ports — keeps internal flow active even when parent doesn't connect the port
-- SUBGRAPH_OUTPUT / SUBGRAPH_INPUT nodes are the internal connection points
+- `nature="subgraph"` · declare ports in `<InputPorts>` / `<OutputPorts>` in `<Global>`
+- `required="false" keepEdge="true"` on optional output ports keeps internal flow active
+- Use `<ComponentReference>` to expose component properties as overridable parameters
 
-**After writing: run `bash scripts/checkconfig.sh <sandbox> <file>` and fix all issues before presenting.**
+**After writing any file: `bash scripts/checkconfig.sh <sandbox> <file>` — fix all issues, re-run until exit 0.**
+
+---
+
+## Pre-Flight Checklist
+
+Before writing any XML, run through these five points. They account for the majority of checkConfig failures and runtime surprises:
+
+**1. Every output port connected**
+Unconnected ports are hard validation errors. Connect all error/reject paths to `TrashWriter` if you don't need them. Common ports to check:
+- `FlatFileReader` port 1 — parse errors (when `dataPolicy="controlled"`)
+- `ExtFilter` port 1 — rejected records
+- `DBOutputTable` port 1 — DB insert/update errors
+- `EXECUTE_GRAPH` port 1 — child graph failures
+- `LIST_FILES` port 1 — directories (always filter and discard these)
+
+**2. Every data edge has `metadata` or `metadataRef`**
+Jobflow control-flow edges are the exception — they carry tokens, not records. All other edges need a metadata reference or checkConfig will fail.
+
+**3. `ExtSort` before every component that requires sorted input**
+Aggregate (`sorted=true`), ExtMergeJoin, Dedup, Denormalizer, and Rollup all require sorted input. Missing sort produces silent wrong results or a runtime crash.
+
+**4. Join component memory check**
+`ExtHashJoin` loads the entire slave (port 1) into Worker heap. If the slave data is large (>10% of available Worker heap), switch to `ExtMergeJoin`: sort both inputs on the join key, zero heap overhead. Read `components.md` for the full join decision guide.
+
+**5. Parameters exist before they're referenced**
+Check `workspace.prm` before referencing `${PARAM_NAME}`. If the parameter may be absent, define a fallback default in the graph's own `<GraphParameters>` block rather than failing silently at runtime.
 
 ---
 
 ## Validation — MANDATORY checkConfig Loop
 
-**You must validate every generated or modified job file before presenting it to the user.**
-Never skip this step. A file that fails checkConfig will not run on the server.
-
-Use the script bundled in this skill:
+**Validate every generated or modified file before presenting it to the user.**
 
 ```bash
-# From the sandbox root (or any directory — script uses absolute args):
 bash scripts/checkconfig.sh <sandbox> <path/inside/sandbox>
-
-# Examples:
-bash scripts/checkconfig.sh MySandbox graph/LoadCustomers.grf
-bash scripts/checkconfig.sh MySandbox graph/subgraph/OrdersReader.sgrf
-bash scripts/checkconfig.sh MySandbox graph/jobflow/LoadAll.jbf
-bash scripts/checkconfig.sh MySandbox graph/services/getCustomers.rjob
+# e.g.: bash scripts/checkconfig.sh MySandbox graph/LoadCustomers.grf
 ```
 
 **Exit codes:** `0` = valid · `1` = issues found (printed) · `2` = server unreachable
 
-**Mandatory loop — follow this every time:**
-1. Write the job file to disk
-2. Run `bash scripts/checkconfig.sh <sandbox> <file>`
-3. If exit code `1`: read every listed issue, fix the file, go to step 2
-4. Only present the XML to the user after exit code `0`
+**Loop:** Write → run → read every listed issue → fix → re-run → repeat until exit `0`. Only present output to the user after exit `0`.
 
-**If the script is missing** (e.g. fresh clone without execute permission):
+If exit `2`: warn the user validation was skipped and the file has not been confirmed valid.
+If script missing execute permission: `chmod +x scripts/checkconfig.sh`
+
+Environment overrides (defaults match local dev):
 ```bash
-chmod +x scripts/checkconfig.sh
-```
-
-**If the server is unreachable** (exit code `2`): warn the user that validation was skipped
-and the file has not been confirmed valid. Do not silently skip.
-
-**Environment overrides** (defaults match local dev):
-```bash
-CLOVER_HOST=http://localhost:8083  # change for remote server
-CLOVER_USER=clover
-CLOVER_PASS=clover
+CLOVER_HOST=http://localhost:8083   CLOVER_USER=clover   CLOVER_PASS=clover
 ```
 
 ---
@@ -182,136 +180,121 @@ CLOVER_PASS=clover
 
 **Only run a job if the user explicitly asks.** Never auto-execute after validation.
 
-Use the script bundled in this skill:
-
 ```bash
-# Basic — run a graph or jobflow:
-bash scripts/run-job.sh <sandbox> <path/inside/sandbox>
-
-# With input parameters:
-bash scripts/run-job.sh MySandbox graph/LoadCustomers.grf hireAge=25 region=EU
+bash scripts/run-job.sh <sandbox> <path/inside/sandbox> [key=value ...]
+# e.g.: bash scripts/run-job.sh MySandbox graph/LoadCustomers.grf region=EU
 ```
 
-**Exit codes:** `0` = FINISHED_OK · `1` = job failed (log printed) · `2` = server unreachable
+**Exit codes:** `0` = FINISHED_OK · `1` = failed (log printed) · `2` = server unreachable
 
-**Full workflow when user asks to run a job:**
-1. Confirm `checkconfig.sh` passed first (or run it now if not done)
-2. Run `bash scripts/run-job.sh <sandbox> <file> [params]`
-3. Script polls until complete — prints status every 3s
-4. On `FINISHED_OK`: offer to fetch tracking (`retrieve_tracking_get`) for record counts
-5. On failure: read the log lines printed by the script, correlate with graph XML, suggest fix
-
-**Environment overrides:**
-```bash
-CLOVER_HOST=http://localhost:8083   # change for remote server
-CLOVER_USER=clover
-CLOVER_PASS=clover
-POLL_INTERVAL=3                     # seconds between polls
-MAX_WAIT=600                        # abort polling after 10 min
-```
-
-**If the script is missing execute permission:**
-```bash
-chmod +x scripts/run-job.sh
-```
+Workflow: confirm checkConfig passed → run → script polls every 3s → on success offer `retrieve_tracking_get` for record counts → on failure read the log, correlate component ID with graph XML, suggest fix.
 
 ---
 
 ## Debugging and Diagnostics
 
-Read `references/debugging.md` for the full workflow.
+Read `references/debugging.md` for the full workflow. Start by identifying the failure type, then follow the matching path.
 
-### When a job fails
+**Path A — Infrastructure failure (OOM, disk full, timeout)**
+1. `retrieve_tracking_get` → confirm status and get error summary
+2. `list_performance_logs` around the failure time → check `wHeap`, `swap`, `wGC`, `jobs`, `jobQueue`
+3. **OOM + `swap > 0`** → Worker killed itself via missed heartbeat; *lower heap first* (not raise it), add host RAM or reduce concurrency
+4. **OOM + no swap** → increase Worker heap via Setup GUI or `worker.jvmOptions=-Xmx<size>m` in `clover.properties`
+5. **ExtSort/ExtHashJoin I/O error** → check disk space first (`df -h`); override temp path with `worker.jvmOptions=-Djava.io.tmpdir=/fast/volume`
+6. **Timeout / job queue growing** → check `jobs` and `jobQueue` metrics; tune `executor.maxRunningJobs`
 
-1. `retrieve_tracking_get` — get status, duration, error summary for the run
-2. `retrive_graph_log_get` — pull the raw log; look for `ERROR` and `FATAL` entries
-3. Correlate the failing component ID from the log with the graph XML
-4. `list_performance_logs` — check if failure correlates with heap pressure or disk full
+**Path B — Job logic failure (component crash, bad data)**
+1. `retrive_graph_log_get` (typo in tool name is intentional) → find `ERROR` and `FATAL` entries
+2. Correlate the failing component ID from the log with the graph XML
+3. **Metadata mismatch** → update `.fmt` to match current source schema; check all graphs that reference it
+4. **CTL2 crash** → check for null fields used without `isnull()` guard; `null + "text"` gives `"nulltext"`, not a crash
 
-### Common failure patterns
+**Path C — Silent or wrong output (job succeeds, data is wrong)**
+1. `retrive_graph_log_get` → check record counts per component; find where data drops or multiplies
+2. Check `ExtFilter` port 1 and `DBOutputTable` port 1 — data may be silently rejected
+3. Jobflow: if `redirectErrorOutput="true"`, check `$in.1.status` in outputMapping — failures are swallowed otherwise
 
-| Symptom | Likely Cause | Fix |
-|---|---|---|
-| `OutOfMemoryError` in Worker | Data volume exceeds heap | Increase `worker.maxHeapSize` or use streaming components |
-| `ExtSort` / `ExtHashJoin` failure | Temp disk full | Separate temp volume from sandboxes |
-| `DBInputTable` timeout | Slow query or exhausted connection pool | Optimize query, tune pool |
-| Metadata mismatch | Schema changed upstream | Update `.fmt` to match new schema |
-| `Remote Edge` failure in cluster | gRPC port 10500–10600 blocked | Open ports in security groups |
-| `NullPointerException` in CTL2 | Null field not handled | Add `isnull()` check before use |
+**Common failures at a glance:**
 
-### Performance tuning
+| Symptom | First step |
+|---|---|
+| `OutOfMemoryError` | Check `swap` in perf log → Path A |
+| ExtSort / ExtHashJoin I/O error | `df -h` on server → check temp disk |
+| DBInputTable timeout | Check connection pool; optimize query |
+| Metadata field type error | Update `.fmt`; check all dependents |
+| Cluster `Remote Edge` failure | Open gRPC ports 10500–10600 |
+| `"null"` in string output | Add `isnull()` check before concat |
+| Jobflow reports success, data wrong | Check `$in.1.status` in outputMapping |
 
-Read `references/architecture.md` for sizing rules.
-- Core + Worker heap combined must not exceed 75% of total RAM; cap Core at 8 GB
-- Monitor: `cHeap`, `wHeap`, `cCPU`, `wCPU`, `cGC`, `wGC` in the 3-second performance log
+**Performance tuning:** Read `references/architecture.md`. Core + Worker heap ≤ 75% total RAM; cap Core at 8 GB. Monitor `cHeap`, `wHeap`, `cCPU`, `wCPU`, `cGC`, `wGC` in the 3-second performance log.
 
 ---
 
 ## MCP Tools
 
+For call sequences, input parameters, and SQL examples see `references/mcp-workflows.md`.
+
 | Tool | Purpose | When to Use |
 |---|---|---|
-| `deployment_current` | Version, DB, JVM, cluster | **Always first** in any MCP session |
+| `deployment_current` | Version, DB, JVM, cluster | **Always first** — reveals heap ceiling, sandbox path, server version |
 | `deployment_supported` | Supported configurations | Upgrade planning, setup validation |
-| `list_performance_logs` | Heap, CPU, GC metrics | Performance issues, capacity planning |
-| `list_server_logs` | Server log by regex | Error hunting, audit trail |
-| `retrieve_sandbox_file` | Read server-side file | When local and server may differ |
-| `retrieve_tracking_get` | Execution history | Investigating a specific run |
-| `retrive_graph_log_get` | Raw execution log | Detailed error analysis |
-| `execute_database_query` | Query system DB | Advanced diagnostics |
-| `retrieve_database_schema` | System DB schema | Advanced diagnostics |
-| `report_support_issue` | File support ticket | Escalating confirmed bugs |
+| `list_performance_logs` | Heap, CPU, GC metrics | Performance issues, OOM diagnosis — scope to failure timestamp ±5 min |
+| `list_server_logs` | Server log by regex (Java regex, case-sensitive) | Infrastructure errors, startup failures, events not tied to a specific run |
+| `retrieve_sandbox_file` | Read server-side file | When local and server may differ; read `workspace.prm` to verify env params |
+| `retrieve_tracking_get` | Execution history and run IDs | Finding the runId for a failed job; getting record counts and timestamps |
+| `retrive_graph_log_get` | Raw execution log (typo intentional) | Detailed error analysis — needs runId from `retrieve_tracking_get` |
+| `execute_database_query` | Query system DB | Historical analysis (failure rates, duration trends) — run `retrieve_database_schema` first |
+| `retrieve_database_schema` | System DB schema | Before writing SQL; table names vary by version |
+| `report_support_issue` | File support ticket | Confirmed CloverDX bugs only, after collecting log + perf data |
 
 ---
 
-## Deprecated Components — Always Flag
+## Deprecated — Always Flag
 
-| Deprecated | Replacement |
-|---|---|
-| `RunGraph` | `ExecuteGraph` |
-| `SystemExecute` | `ExecuteScript` |
+| Deprecated | Replacement | Notes |
+|---|---|---|
+| `RunGraph` | `ExecuteGraph` | Removed in v7.0 |
+| `SystemExecute` | `ExecuteScript` | Removed in v7.0 |
+| `REFORMAT` type | `MAP` type | Same component, renamed in 5.14; old XML still valid |
 
-Flag these whenever you see them and suggest replacing during any modification work.
+Flag on sight and suggest replacing during any modification work.
 
 ---
 
 ## CI/CD
 
-All CloverDX artifacts are XML — they belong in Git. Three promotion methods:
+All CloverDX artifacts are XML — they belong in Git. Three promotion paths:
 1. **Designer Sync** — dev only, no audit trail
 2. **Git-to-Server Sync** — sandbox as Git working copy
 3. **REST API Atomic Deployment** — recommended for production; POST sandbox ZIP to `/clover/rest/sandboxes/upload`
 
-In Git: never commit credentials — use `${secret:...}` for secrets. Don't reformat XML
-unnecessarily. `workspace.prm` typically differs per environment.
+Never commit credentials — use `${secret:<manager>/<id>}` to pull from Azure Key Vault / AWS Secrets Manager at runtime. Don't reformat XML unnecessarily (breaks diffs). `workspace.prm` typically differs per environment.
 
 ---
 
 ## Reference Files
 
-Load only what the current task requires — you don't need to read all of them.
+**Quick nav — what are you building?**
 
-**Discovery & architecture**
-- `sandbox-discovery.md` — full sandbox inventory workflow
-- `architecture.md` — JVM model, memory sizing, ports, AWS/Kubernetes deployment
+| Task | Start here | Then if needed |
+|---|---|---|
+| New graph | `graph-xml.md` + `components.md` | Component sub-files · `patterns.md` |
+| New jobflow | `jobflow-xml.md` | `comp-jobflow.md` |
+| New data service | `dataservice-xml.md` | `comp-dataservices.md` |
+| New subgraph | `subgraph-xml.md` | `comp-subgraphs.md` |
+| CTL2 code | `ctlref.md` | Relevant `ctl-*.md` sub-file |
+| Debugging | `debugging.md` | `architecture.md` for sizing · `mcp-workflows.md` for call sequences |
+| Metadata / `.fmt` files | `metadata.md` | — |
+| Common ETL patterns | `patterns.md` | — |
 
-**CTL2** — start with `ctlref.md`, then load the relevant sub-file
-- `ctlref.md` · `ctl-types-and-syntax.md` · `ctl-string-functions.md`
-- `ctl-date-functions.md` · `ctl-conversion-functions.md`
-- `ctl-container-functions.md` · `ctl-math-misc-functions.md`
+**Full index** (load only what the task requires):
 
-**Components** — start with `components.md`, then load the relevant sub-file
-- `components.md` · `comp-readers.md` · `comp-writers.md` · `comp-transformers.md`
-- `comp-joiners.md` · `comp-sorters-routing.md` · `comp-jobflow.md`
-- `comp-dataservices.md` · `comp-subgraphs.md` · `comp-file-operations.md`
+*Discovery & architecture:* `sandbox-discovery.md` · `architecture.md`
 
-**XML structure**
-- `graph-xml.md` — `.grf` structure with annotated real examples
-- `jobflow-xml.md` — `.jbf` structure, LOOP/retry/fan-out patterns
-- `subgraph-xml.md` — `.sgrf` structure, port declaration, ComponentReference
-- `dataservice-xml.md` — `.rjob` structure, GET/POST/upload patterns
+*CTL2:* `ctlref.md` · `ctl-types-and-syntax.md` · `ctl-string-functions.md` · `ctl-date-functions.md` · `ctl-conversion-functions.md` · `ctl-container-functions.md` · `ctl-math-misc-functions.md`
 
-**Other**
-- `metadata.md` — record types, field types, `.fmt` files, edge assignment
-- `patterns.md` — 20 common ETL patterns from real examples
-- `debugging.md` — MCP diagnostic workflows, log analysis
+*Components:* `components.md` · `comp-readers.md` · `comp-writers.md` · `comp-transformers.md` · `comp-joiners.md` · `comp-sorters-routing.md` · `comp-jobflow.md` · `comp-dataservices.md` · `comp-subgraphs.md` · `comp-file-operations.md`
+
+*XML structure:* `graph-xml.md` · `jobflow-xml.md` · `subgraph-xml.md` · `dataservice-xml.md`
+
+*Other:* `metadata.md` · `patterns.md` · `debugging.md` · `mcp-workflows.md`

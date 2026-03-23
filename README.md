@@ -18,10 +18,21 @@ working inside a CloverDX sandbox or when any CloverDX development task is menti
 | CTL2 | Language reference, all built-in functions (string, date, math, conversion, container) |
 | Components | All major component types with real configuration examples |
 | Graph XML | `.grf` / `.jbf` / `.sgrf` / `.rjob` structure from real annotated examples |
-| Metadata | Record types, field types, `.fmt` files, inline metadata, edge assignment |
-| Patterns | 20 common ETL patterns derived from real example graphs |
-| Debugging | MCP diagnostic workflows, log analysis, performance correlation |
+| Metadata | Record types, field types, `.fmt` files, inline metadata, edge assignment, line-ending inspection |
+| Patterns | Common ETL patterns derived from real example graphs |
+| Debugging | Symptom triage table, MCP diagnostic call chains, log analysis, performance correlation |
+| MCP Workflows | Step-by-step call sequences, SQL examples, field-level extraction guide |
 | Architecture | Dual JVM model, memory sizing, AWS/Kubernetes deployment |
+
+## Changelog
+
+**Latest update**
+- `mcp-workflows.md` — new reference file: canonical diagnostic call chain, step-by-step MCP call sequences with input parameters and key fields to extract
+- `debugging.md` — added symptom triage table (10 symptoms mapped to likely cause and first MCP tool to call); improved per-tool guidance with `FATAL` entries, regex pattern examples, cluster failure patterns
+- `SKILL.md` — trimmed inline XML examples to 3-5 line stubs (full examples live in reference files); added metadata decision rule, parameter safety check, CTL2 gotchas (null+string, decimal precision, try/catch, `replace()` regex escaping), jobflow performance warning (~42× slower for data), `stopOnFail` modes, `LIST_FILES` filter requirement
+- `jobflow-xml.md` — execution model section, `$in.1.status` RunStatus documentation, `$out.0.executionLabel` + `$out.1.*` shown together
+- `comp-jobflow.md` — fixed root element (`<jbf:jobflow>` → `<Graph nature="jobflow">`), `graphURL` → `jobURL`, RunStatus port mapping, async monitoring patterns
+- `patterns.md`, `sandbox-discovery.md`, `ctl-types-and-syntax.md` — targeted additions
 
 ## Installation
 
@@ -48,7 +59,7 @@ skill/
   SKILL.md          — Skill definition, triggers, and workflow instructions
   scripts/
     checkconfig.sh  — Validates a job file via CloverDX checkConfig API
-  references/       — 27 focused reference files loaded on demand
+  references/       — 28 focused reference files loaded on demand
     ctlref.md
     ctl-*.md        — CTL2 function reference (6 files)
     components.md
@@ -62,6 +73,7 @@ skill/
     debugging.md
     architecture.md
     sandbox-discovery.md
+    mcp-workflows.md
 ```
 
 ## Validation Script

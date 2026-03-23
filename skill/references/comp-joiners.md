@@ -89,8 +89,8 @@ function integer transform() {
 }
 
 function string getProfitMarginCategory(decimal profitMargin) {
-    if (profitMargin <= 5.0d) return "Low";
-    if (profitMargin <= 15.0d) return "Medium";
+    if (profitMargin <= 5.0D) return "Low";
+    if (profitMargin <= 15.0D) return "Medium";
     return "High";
 }
 ```
