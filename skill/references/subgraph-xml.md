@@ -71,6 +71,20 @@ graphs see when they embed the subgraph as a component.
 </OutputPorts>
 ```
 
+### Input-only ports (write-only subgraph — receives data, nothing returned):
+
+> **⚠️ Tag casing is critical:** Input port declarations use **lowercase** tags
+> (`<inputPorts>`, `<singlePort>`) — not `<InputPorts>` / `<SinglePort>` which is
+> the output port convention. CloverDX will reject the wrong casing at load time.
+
+```xml
+<inputPorts>
+    <singlePort connected="false" name="0"/>
+</inputPorts>
+```
+
+`connected="false"` means the port is not required to be connected in Designer.
+
 ---
 
 ## SUBGRAPH_INPUT and SUBGRAPH_OUTPUT Nodes
@@ -295,6 +309,56 @@ In practice, Designer manages icon paths automatically. Don't hand-edit them.
 | Parameter overridden per parent instance | `<ComponentReference>` on the parameter |
 | Parameter computed from parent dictionary | Dynamic param with CTL2 `getValue()` |
 | Fixed internal constant | Hardcode in the node attribute, no parameter needed |
+
+---
+
+## Complete Write-Only Subgraph (InvalidRecordsWriter pattern)
+
+Pattern: subgraph receives records and writes them somewhere — no output to parent.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Graph author="clover" created="2024-01-01 00:00:00" guiVersion="5.13.0"
+       id="sgrf_writer" name="InvalidRecordsWriter" nature="subgraph">
+    <Global>
+        <Metadata fileURL="${META_DIR}/Errors.fmt" id="META_ERRORS"/>
+        <GraphParameters>
+            <GraphParameterFile fileURL="workspace.prm"/>
+        </GraphParameters>
+        <!-- Lowercase inputPorts / singlePort — this casing is REQUIRED for input ports -->
+        <inputPorts>
+            <singlePort connected="false" name="0"/>
+        </inputPorts>
+        <!-- SUBGRAPH_OUTPUT is still required even though no data flows out.
+             Declare port as required=false so parent doesn't need to connect it. -->
+        <OutputPorts>
+            <SinglePort id="PORT_PASSTHROUGH" name="passthrough" metadata="META_ERRORS"
+                        required="false" keepEdge="true"/>
+        </OutputPorts>
+    </Global>
+
+    <Phase number="0">
+        <Node id="SUBGRAPH_INPUT0" type="SUBGRAPH_INPUT"
+              inputPortIndex="0" guiX="24" guiY="100"/>
+
+        <Node id="COPY0" type="SIMPLE_COPY" guiX="200" guiY="100"/>
+
+        <Node id="WRITE_ERRORS" type="FLAT_FILE_WRITER"
+              fileURL="${DATAOUT_DIR}/errors.csv"
+              guiX="400" guiY="50"/>
+
+        <!-- SUBGRAPH_OUTPUT is mandatory — even for write-only subgraphs -->
+        <Node id="SUBGRAPH_OUTPUT0" type="SUBGRAPH_OUTPUT"
+              outputPortIndex="0" guiX="400" guiY="150"/>
+
+        <Edge id="E0" fromNode="SUBGRAPH_INPUT0:0" toNode="COPY0:0" metadata="META_ERRORS"/>
+        <Edge id="E1" fromNode="COPY0:0" toNode="WRITE_ERRORS:0" metadata="META_ERRORS"/>
+        <Edge id="E2" fromNode="COPY0:1" toNode="SUBGRAPH_OUTPUT0:0" metadata="META_ERRORS"/>
+    </Phase>
+</Graph>
+```
+
+**Why the SIMPLE_COPY fork?** CloverDX requires at least one SUBGRAPH_OUTPUT node in every subgraph. Since there's no natural output, SIMPLE_COPY creates a second branch that feeds SUBGRAPH_OUTPUT — the parent doesn't need to connect it because `required="false"` and `keepEdge="true"` are set.
 
 ---
 

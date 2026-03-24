@@ -65,13 +65,14 @@ RESPONSE=$(curl -s -w "\n%{http_code}" \
   "${CLOVER_HOST}/clover/api/rest/v1/executions" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
+  -H "X-Requested-By: CloverDX" \
   -d "$BODY" 2>/dev/null) || {
   echo "ERROR: Could not reach CloverDX server at ${CLOVER_HOST}" >&2
   exit 2
 }
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY_RESP=$(echo "$RESPONSE" | head -n -1)
+BODY_RESP=$(echo "$RESPONSE" | sed '$d')
 
 if [ "$HTTP_CODE" != "201" ]; then
   echo "ERROR: execute returned HTTP ${HTTP_CODE}" >&2
@@ -97,6 +98,7 @@ while [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
 
   STATUS_RESP=$(curl -s -u "${CLOVER_USER}:${CLOVER_PASS}" \
     -H "Accept: application/json" \
+    -H "X-Requested-By: CloverDX" \
     "${CLOVER_HOST}/clover/api/rest/v1/executions/${RUN_ID}" 2>/dev/null) || continue
 
   STATUS=$(echo "$STATUS_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))" 2>/dev/null)
@@ -114,6 +116,7 @@ while [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
       echo "Log: ${CLOVER_HOST}/clover/api/rest/v1/executions/${RUN_ID}/log"
       # Print error from log (first ERROR/FATAL line)
       curl -s -u "${CLOVER_USER}:${CLOVER_PASS}" \
+        -H "X-Requested-By: CloverDX" \
         "${CLOVER_HOST}/clover/api/rest/v1/executions/${RUN_ID}/log" 2>/dev/null \
         | grep -m5 -E "(ERROR|FATAL)" || true
       exit 1

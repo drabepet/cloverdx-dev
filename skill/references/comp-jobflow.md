@@ -138,6 +138,19 @@ Discovers files matching a glob pattern and emits one record per entry (files **
 
 **⚠️ Always filter on `isFile == true`** immediately after LIST_FILES — directories are included in output and will crash EXECUTE_GRAPH if not filtered out.
 
+> **TRASH multi-port assignment:** When routing multiple edges to the same TRASH component
+> (e.g., success path + error path both discarded), each edge must connect to a **different
+> input port**. Connecting two edges to port `:0` causes "Input port [0] already assigned":
+> ```xml
+> <!-- WRONG -->
+> <Edge fromNode="EXEC1:0" toNode="TRASH0:0"/>
+> <Edge fromNode="EXEC2:0" toNode="TRASH0:0"/>  <!-- duplicate port 0 → error -->
+>
+> <!-- CORRECT -->
+> <Edge fromNode="EXEC1:0" toNode="TRASH0:0"/>
+> <Edge fromNode="EXEC2:0" toNode="TRASH0:1"/>  <!-- port 1 -->
+> ```
+
 **Pattern — process each file with a separate graph run:**
 ```
 ListFiles(Payments-*.csv)

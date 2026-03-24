@@ -34,13 +34,14 @@ RESPONSE=$(curl -s -w "\n%{http_code}" \
   -G "${CLOVER_HOST}/clover/data-service/checkConfig" \
   --data-urlencode "SANDBOX=${SANDBOX}" \
   --data-urlencode "FILE_URL=${FILE_URL}" \
-  -H "accept: application/json" 2>/dev/null) || {
+  -H "accept: application/json" \
+  -H "X-Requested-By: CloverDX" 2>/dev/null) || {
   echo "ERROR: Could not reach CloverDX server at ${CLOVER_HOST}" >&2
   exit 2
 }
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | head -n -1)
+BODY=$(echo "$RESPONSE" | sed '$d')
 
 if [ "$HTTP_CODE" != "200" ]; then
   echo "ERROR: checkConfig returned HTTP ${HTTP_CODE}" >&2
@@ -48,17 +49,28 @@ if [ "$HTTP_CODE" != "200" ]; then
   exit 2
 fi
 
-# Empty array = valid
-if [ "$BODY" = "[]" ] || [ -z "$BODY" ]; then
+# Empty array or empty body = valid
+if [ "$BODY" = "[]" ] || [ -z "$BODY" ] || [ "$BODY" = "{}" ]; then
   echo "OK: ${SANDBOX}/${FILE_URL} is valid"
   exit 0
 fi
 
 # Issues found — print them and exit 1
+# Server returns {"CheckConfigError": [...]} wrapper — unwrap it
 echo "ISSUES in ${SANDBOX}/${FILE_URL}:"
 echo "$BODY" | python3 -c "
 import json, sys
-issues = json.load(sys.stdin)
+data = json.load(sys.stdin)
+# Unwrap CheckConfigError envelope if present
+if isinstance(data, dict) and 'CheckConfigError' in data:
+    issues = data['CheckConfigError']
+elif isinstance(data, list):
+    issues = data
+else:
+    issues = []
+if not issues:
+    print('  (no issues)')
+    sys.exit(0)
 for i, issue in enumerate(issues, 1):
     severity = issue.get('severity', 'ERROR')
     message  = issue.get('message', str(issue))

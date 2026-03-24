@@ -538,10 +538,48 @@ API response metadata: `number` (double) for sensor readings, `decimal` for fina
 **Raw-input pattern:**
 Read all fields as `string` in input metadata → Reformat validates + parses → typed output metadata. This avoids reader parse errors blocking the whole pipeline — you handle bad data explicitly in CTL2.
 
+**PostgreSQL type mapping — use the correct CloverDX type:**
+
+| PostgreSQL type | CloverDX metadata type |
+|---|---|
+| `integer`, `serial` | `type="integer"` |
+| `bigint`, `bigserial` | **`type="long"`** — NOT integer! |
+| `numeric(p,s)` | `type="decimal" length="p" scale="s"` |
+| `real`, `double precision` | `type="number"` |
+| `varchar`, `text` | `type="string"` |
+| `boolean` | `type="boolean"` |
+| `timestamp`, `timestamptz` | `type="date" format="yyyy-MM-dd HH:mm:ss"` |
+| `date` | `type="date" format="yyyy-MM-dd"` |
+| `bytea` | `type="byte"` |
+
+> **⚠️ `bigint`/`bigserial` must be `type="long"`** — using `type="integer"` causes silent
+> overflow failures at runtime that only manifest when data is actually returned (empty
+> queries return HTTP 200, but queries with data return HTTP 500).
+
+**Inline metadata always needs delimiters — even for DB-only use:**
+
+All `type="delimited"` metadata requires `fieldDelimiter` and `recordDelimiter` on the
+`<Record>` element, even when the metadata is used exclusively for DB operations
+(`DB_OUTPUT_TABLE`, `DB_INPUT_TABLE`) and no file is ever read or written. This is a
+CloverDX engine requirement. Also add `eofAsDelimiter="true"` on the last field.
+
+```xml
+<!-- Correct — delimiters present even though this metadata is only used for DB output -->
+<Metadata id="META_CUSTOMER_REPORT">
+  <Record type="delimited" fieldDelimiter="," recordDelimiter="\n" name="CustomerReport">
+    <Field name="id" type="long"/>
+    <Field name="name" type="string"/>
+    <Field name="total" type="decimal" length="12" scale="2" eofAsDelimiter="true"/>
+  </Record>
+</Metadata>
+```
+
 **Never do:**
 - Use generic field names (`field1`, `field2`) — always use business names
 - Skip `timeZone` on date fields — leads to DST-related data corruption
 - Omit `scale` on decimal fields used in financial calculations
+- Use `type="integer"` for PostgreSQL `bigint`/`bigserial` columns
+- Omit `fieldDelimiter`/`recordDelimiter` on delimited metadata used for DB components
 
 **Always inspect line endings before setting `recordDelimiter`:**
 

@@ -150,6 +150,27 @@ Within a phase, all components execute concurrently (driven by data flow).
 Most simple graphs use a single phase (number="0"). Use multiple phases when you need
 to guarantee completion order (e.g., load a lookup table before the main processing phase).
 
+> **⚠️ Phase ordering rule — parallel execution within a phase:** All components inside
+> the same phase run concurrently (data-flow driven). If component B depends on a
+> side-effect from component A (e.g., a foreign-key table that must exist before its
+> child table is created), they **must be in separate phases**. Classic example:
+>
+> ```xml
+> <!-- WRONG: both in Phase 0 — child table may create before parent -->
+> <Phase number="0">
+>     <Node id="CREATE_PARENT" type="DB_EXECUTE" .../>
+>     <Node id="CREATE_CHILD" type="DB_EXECUTE" .../>  <!-- FK depends on parent -->
+> </Phase>
+>
+> <!-- CORRECT: separate phases guarantee order -->
+> <Phase number="0">
+>     <Node id="CREATE_PARENT" type="DB_EXECUTE" .../>
+> </Phase>
+> <Phase number="1">
+>     <Node id="CREATE_CHILD" type="DB_EXECUTE" .../>
+> </Phase>
+> ```
+
 ---
 
 ## `<Node>` (Component)

@@ -160,8 +160,8 @@ The data service acts as a webhook/trigger — receives a POST, fires a graph, r
 
 | Function | Returns |
 |---|---|
-| `getParamValue("name")` | URL path or query parameter value |
-| `getRequestParameter("name")` | Same as above |
+| `getParamValue("name")` | URL path or query parameter value (alias, works everywhere) |
+| `getRequestParameter("name")` | Canonical form — use this inside `GET_JOB_INPUT` mapping blocks |
 | `getRequestBody()` | Raw request body string |
 | `getRequestHeader("name")` | HTTP header value |
 | `getRequestMethod()` | `"GET"`, `"POST"`, etc. |
@@ -180,6 +180,56 @@ The data service acts as a webhook/trigger — receives a POST, fires a graph, r
 | `setResponseContentType("application/json")` | Set Content-Type |
 | `setResponseBody(string)` | Set raw response body |
 | `setResponseEncoding("UTF-8")` | Set encoding |
+
+---
+
+## Deploying Data Services
+
+Creating a `.rjob` file is not enough — it must be **published** via the CloverDX Server GUI before it becomes accessible as an HTTP endpoint.
+
+**Publishing steps:**
+1. Deploy/save the `.rjob` file to the sandbox (via Designer or file copy)
+2. In CloverDX Server web UI: **Data Services → Publish New Job**
+3. Select the sandbox, then select the `.rjob` file
+4. Click Publish — the endpoint becomes active immediately
+
+**Endpoint URL format:**
+```
+http://localhost:8083/clover/data-service/<url-path>
+```
+
+> **⚠️ No sandbox name in the URL** — the sandbox is selected at publish time; it does
+> NOT appear in the endpoint URL. The URL comes entirely from the `<UrlPath>` in the
+> `.rjob` file.
+
+```bash
+# WRONG — sandbox name is not part of the URL
+curl http://localhost:8083/clover/data-service/mySandbox/customers
+
+# CORRECT — URL path is exactly what you put in <UrlPath>
+curl -u clover:clover http://localhost:8083/clover/data-service/customers
+```
+
+**Execution history logging** — disabled by default per data service. To enable:
+Data Services → select the service → Configuration tab → enable "Save job execution record".
+Without this, failed runs produce no server-side log.
+
+---
+
+## Server-Side SQL Filtering (preferred over CTL2 ExtFilter)
+
+For `DB_INPUT_TABLE` inside a `.rjob`, URL path/query parameters declared in
+`<EndpointSettings>` can be referenced directly in SQL:
+
+```xml
+<attr name="sqlQuery"><![CDATA[
+SELECT * FROM customers WHERE id = ${customerId}
+]]></attr>
+```
+
+This pushes filtering to the database — far more efficient than reading all rows and
+applying CTL2 `ExtFilter`. Only use this for trusted/validated parameters; for
+user-supplied values that could contain injection characters, use CTL2 post-filter instead.
 
 ---
 
